@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest'
 import { $fetch } from '@nuxt/test-utils/e2e'
-import type { SearchResult, ExportData } from '~/types'
+import { describe, expect, it } from 'vitest'
+import type { ExportData, SearchResult } from '~/types'
 
 /**
  * Contract test for POST /api/export
  * Reference: api-contract.yaml lines 84-116
- * 
+ *
  * ⚠️ CRITICAL: This test MUST FAIL before implementation!
  * The endpoint does not exist yet - this validates the contract.
  */
@@ -119,18 +119,18 @@ describe('POST /api/export - Contract Test', () => {
     expect(response.status).toBe(200)
 
     const csvContent = await response.text()
-    
+
     // Validate CSV structure
     expect(typeof csvContent).toBe('string')
     expect(csvContent.length).toBeGreaterThan(0)
-    
+
     // Should contain CSV headers
     const lines = csvContent.split('\n')
     expect(lines[0]).toContain('name') // Should have header row
     expect(lines[0]).toContain('url')
     expect(lines[0]).toContain('followers')
     expect(lines[0]).toContain('ownerName')
-    
+
     // Should have data rows
     expect(lines.length).toBeGreaterThan(1)
   })
@@ -144,7 +144,7 @@ describe('POST /api/export - Contract Test', () => {
         body: { data: mockSearchResult } // Missing format
       })
       expect(false).toBe(true) // Should not reach here
-    } catch (error: any) {
+    } catch (error) {
       // Should return 400 Bad Request per api-contract.yaml line 115-116
       expect(error.response?.status).toBe(400)
       expect(error.response?.data).toHaveProperty('code')
@@ -159,7 +159,7 @@ describe('POST /api/export - Contract Test', () => {
         body: { format: 'json' } // Missing data
       })
       expect(false).toBe(true) // Should not reach here
-    } catch (error: any) {
+    } catch (error) {
       expect(error.response?.status).toBe(400)
     }
   })
@@ -176,7 +176,7 @@ describe('POST /api/export - Contract Test', () => {
         }
       })
       expect(false).toBe(true) // Should not reach here
-    } catch (error: any) {
+    } catch (error) {
       // Should return 400 Bad Request for invalid enum value
       expect(error.response?.status).toBe(400)
       expect(error.response?.data?.message).toContain('format')
@@ -216,10 +216,10 @@ describe('POST /api/export - Contract Test', () => {
 
     // Verify data matches original
     expect(response.metadata.totalPlaylists).toBe(mockSearchResult.playlists.length)
-    
+
     const originalPlaylist = mockSearchResult.playlists[0]
     const exportedPlaylist = response.playlists[0]
-    
+
     expect(exportedPlaylist.name).toBe(originalPlaylist.name)
     expect(exportedPlaylist.url).toBe(originalPlaylist.url)
     expect(exportedPlaylist.followers).toBe(originalPlaylist.followerCount)

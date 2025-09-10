@@ -42,7 +42,7 @@ export interface SearchState {
  * Reference: data-model.md lines 179-183
  */
 export interface CachedResult {
-  key: string                   // Hash of search params
+  key: string // Hash of search params
   result: SearchResult
   expiresAt: string
 }
@@ -62,7 +62,7 @@ export interface CacheState {
  * Reference: data-model.md lines 185-191
  */
 export interface UIState {
-  selectedPlaylists: string[]   // For bulk operations
+  selectedPlaylists: string[] // For bulk operations
   sortBy: SortField
   sortOrder: 'asc' | 'desc'
   filterText: string

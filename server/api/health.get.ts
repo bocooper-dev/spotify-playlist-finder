@@ -1,24 +1,24 @@
 /**
  * GET /api/health
- * 
+ *
  * Health check endpoint for monitoring and load balancers.
  * Returns system status, performance metrics, and dependency health.
  */
 
+import { useCache } from '../.././lib/cache-manager'
+import { useRateLimiter } from '../.././lib/rate-limiter'
+import { createSpotifyClient } from '../.././lib/spotify-client'
 import { getPerformanceStats } from '../middleware/performance'
-import { useCache } from '~/lib/cache-manager'
-import { useRateLimiter } from '~/lib/rate-limiter'
-import { createSpotifyClient } from '~/lib/spotify-client'
 
 export default defineEventHandler(async (event) => {
   const startTime = Date.now()
-  
+
   // Set headers
   setHeaders(event, {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-cache, no-store, must-revalidate'
   })
-  
+
   const health = {
     status: 'healthy' as 'healthy' | 'degraded' | 'unhealthy',
     timestamp: new Date().toISOString(),
@@ -36,10 +36,10 @@ export default defineEventHandler(async (event) => {
     performance: getPerformanceStats(),
     responseTime: 0 // Will be set at the end
   }
-  
+
   // Determine overall health status
   const failedChecks = Object.values(health.checks).filter(check => !check.healthy)
-  
+
   if (failedChecks.length === 0) {
     health.status = 'healthy'
   } else if (failedChecks.length <= 2) {
@@ -47,16 +47,17 @@ export default defineEventHandler(async (event) => {
   } else {
     health.status = 'unhealthy'
   }
-  
+
   // Set response time
   health.responseTime = Date.now() - startTime
-  
+
   // Set appropriate HTTP status code
-  const statusCode = health.status === 'healthy' ? 200 : 
-                    health.status === 'degraded' ? 200 : 503
-  
+  const statusCode = health.status === 'healthy'
+    ? 200
+    : health.status === 'degraded' ? 200 : 503
+
   setResponseStatus(event, statusCode)
-  
+
   return health
 })
 
@@ -68,22 +69,22 @@ async function checkCacheHealth() {
     const cache = useCache()
     const testKey = 'health_check_cache'
     const testValue = { timestamp: Date.now() }
-    
+
     // Test write
     await cache.set(testKey, testValue, 60)
-    
+
     // Test read
     const retrieved = await cache.get(testKey)
-    
+
     // Test delete
     await cache.delete(testKey)
-    
+
     return {
       healthy: retrieved !== null,
       responseTime: 0, // Would measure actual time
       message: retrieved ? 'Cache read/write successful' : 'Cache test failed'
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,
@@ -100,16 +101,16 @@ async function checkSpotifyHealth() {
   try {
     const spotifyClient = createSpotifyClient()
     await spotifyClient.initialize()
-    
+
     // Try to get genres (lightweight operation)
     const genres = await spotifyClient.getAvailableGenres()
-    
+
     return {
       healthy: Array.isArray(genres) && genres.length > 0,
       responseTime: 0, // Would measure actual time
       message: `Spotify API accessible, ${genres.length} genres available`
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,
@@ -126,7 +127,7 @@ function checkRateLimiterHealth() {
   try {
     const rateLimiter = useRateLimiter()
     const metrics = rateLimiter.getMetrics()
-    
+
     return {
       healthy: true,
       responseTime: 0,
@@ -136,7 +137,7 @@ function checkRateLimiterHealth() {
         blockedRequests: metrics.blockedRequests
       }
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,
@@ -151,15 +152,15 @@ function checkRateLimiterHealth() {
  */
 async function checkDatabaseHealth() {
   try {
-    if (process.server) {
+    if (import.meta.server) {
       const storage = useStorage('redis')
       const testKey = 'health_check_db'
-      
+
       // Test Redis connection
       await storage.setItem(testKey, 'health_check', { ttl: 60 })
       const value = await storage.getItem(testKey)
       await storage.removeItem(testKey)
-      
+
       return {
         healthy: value === 'health_check',
         responseTime: 0,
@@ -172,7 +173,7 @@ async function checkDatabaseHealth() {
         message: 'Client-side: Database check skipped'
       }
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,
@@ -191,10 +192,10 @@ function checkMemoryHealth() {
     const totalMB = Math.round(memUsage.heapTotal / 1024 / 1024)
     const usedMB = Math.round(memUsage.heapUsed / 1024 / 1024)
     const usagePercent = Math.round((usedMB / totalMB) * 100)
-    
+
     // Consider unhealthy if using more than 90% of heap
     const healthy = usagePercent < 90
-    
+
     return {
       healthy,
       responseTime: 0,
@@ -207,7 +208,7 @@ function checkMemoryHealth() {
         rss: Math.round(memUsage.rss / 1024 / 1024)
       }
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,
@@ -228,10 +229,10 @@ async function checkDiskHealth() {
       total: 10000,
       used: 9000
     }
-    
+
     const usagePercent = Math.round((stats.used / stats.total) * 100)
     const healthy = usagePercent < 90
-    
+
     return {
       healthy,
       responseTime: 0,
@@ -242,7 +243,7 @@ async function checkDiskHealth() {
         totalMB: stats.total
       }
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,

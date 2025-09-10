@@ -1,9 +1,9 @@
 /**
  * Cache Manager Library
- * 
+ *
  * Provides comprehensive caching functionality with multiple storage backends,
  * TTL management, cache warming, and intelligent invalidation strategies.
- * 
+ *
  * Features:
  * - Multi-tier caching (Memory, Redis, Browser Storage)
  * - Automatic TTL management and cleanup
@@ -14,7 +14,7 @@
  * - Type-safe operations
  */
 
-export interface CacheEntry<T = any> {
+export interface CacheEntry<T = unknown> {
   key: string
   value: T
   createdAt: number
@@ -63,9 +63,9 @@ export interface CacheStats {
   evictionCount: number
   compressionRatio: number
   tierStats: {
-    memory: { entries: number; size: number; hits: number; misses: number }
-    redis: { entries: number; size: number; hits: number; misses: number }
-    browser: { entries: number; size: number; hits: number; misses: number }
+    memory: { entries: number, size: number, hits: number, misses: number }
+    redis: { entries: number, size: number, hits: number, misses: number }
+    browser: { entries: number, size: number, hits: number, misses: number }
   }
 }
 
@@ -94,18 +94,18 @@ export class CacheError extends Error {
  */
 abstract class CacheTier {
   abstract name: string
-  
+
   abstract get<T>(key: string): Promise<CacheEntry<T> | null>
   abstract set<T>(key: string, value: T, ttl: number, tags?: string[]): Promise<void>
   abstract delete(key: string): Promise<boolean>
   abstract clear(pattern?: string): Promise<number>
   abstract exists(key: string): Promise<boolean>
   abstract getStats(): Promise<Partial<CacheStats['tierStats']['memory']>>
-  
+
   protected generateEntry<T>(
-    key: string, 
-    value: T, 
-    ttl: number, 
+    key: string,
+    value: T,
+    ttl: number,
     tags: string[] = []
   ): CacheEntry<T> {
     const now = Date.now()
@@ -121,12 +121,12 @@ abstract class CacheTier {
       tags
     }
   }
-  
+
   protected isExpired(entry: CacheEntry): boolean {
     return Date.now() > entry.expiresAt
   }
-  
-  protected calculateSize(value: any): number {
+
+  protected calculateSize(value: unknown): number {
     return Buffer.byteLength(JSON.stringify(value), 'utf8')
   }
 }
@@ -138,40 +138,40 @@ class MemoryCacheTier extends CacheTier {
   name = 'memory'
   private cache = new Map<string, CacheEntry>()
   private stats = { hits: 0, misses: 0, evictions: 0 }
-  
+
   constructor(private config: CacheConfig['tiers']['memory']) {
     super()
   }
 
   async get<T>(key: string): Promise<CacheEntry<T> | null> {
     const entry = this.cache.get(key)
-    
+
     if (!entry) {
       this.stats.misses++
       return null
     }
-    
+
     if (this.isExpired(entry)) {
       this.cache.delete(key)
       this.stats.misses++
       return null
     }
-    
+
     entry.accessCount++
     entry.lastAccessed = Date.now()
     this.stats.hits++
-    
+
     return entry as CacheEntry<T>
   }
 
   async set<T>(key: string, value: T, ttl: number, tags: string[] = []): Promise<void> {
     const entry = this.generateEntry(key, value, ttl, tags)
-    
+
     // Check memory limits
     if (this.shouldEvict()) {
       this.evictLeastRecentlyUsed()
     }
-    
+
     this.cache.set(key, entry)
   }
 
@@ -181,7 +181,7 @@ class MemoryCacheTier extends CacheTier {
 
   async clear(pattern?: string): Promise<number> {
     let deletedCount = 0
-    
+
     if (pattern) {
       const regex = new RegExp(pattern)
       for (const [key] of this.cache) {
@@ -194,7 +194,7 @@ class MemoryCacheTier extends CacheTier {
       deletedCount = this.cache.size
       this.cache.clear()
     }
-    
+
     return deletedCount
   }
 
@@ -206,11 +206,11 @@ class MemoryCacheTier extends CacheTier {
   async getStats() {
     const entries = this.cache.size
     let totalSize = 0
-    
+
     for (const entry of this.cache.values()) {
       totalSize += entry.size
     }
-    
+
     return {
       entries,
       size: totalSize,
@@ -218,22 +218,22 @@ class MemoryCacheTier extends CacheTier {
       misses: this.stats.misses
     }
   }
-  
+
   private shouldEvict(): boolean {
     return this.cache.size >= this.config.maxEntries
   }
-  
+
   private evictLeastRecentlyUsed(): void {
     let oldestKey: string | null = null
     let oldestTime = Date.now()
-    
+
     for (const [key, entry] of this.cache) {
       if (entry.lastAccessed < oldestTime) {
         oldestTime = entry.lastAccessed
         oldestKey = key
       }
     }
-    
+
     if (oldestKey) {
       this.cache.delete(oldestKey)
       this.stats.evictions++
@@ -246,24 +246,24 @@ class MemoryCacheTier extends CacheTier {
  */
 class RedisCacheTier extends CacheTier {
   name = 'redis'
-  private redis: any = null
+  private redis: unknown = null
   private stats = { hits: 0, misses: 0 }
-  
+
   constructor(private config: CacheConfig['tiers']['redis']) {
     super()
     this.initializeRedis()
   }
-  
+
   private async initializeRedis() {
     try {
-      if (process.server) {
+      if (import.meta.server) {
         // Use Nitro's built-in Redis storage
         this.redis = useStorage('redis')
       } else {
         // Client-side: Redis not available
         this.redis = null
       }
-    } catch (error) {
+    } catch {
       console.warn('Redis initialization failed:', error)
       this.redis = null
     }
@@ -274,34 +274,33 @@ class RedisCacheTier extends CacheTier {
       this.stats.misses++
       return null
     }
-    
+
     try {
       const prefixedKey = `${this.config.keyPrefix}:${key}`
       const data = await this.redis.getItem(prefixedKey)
-      
+
       if (!data) {
         this.stats.misses++
         return null
       }
-      
+
       const entry: CacheEntry<T> = JSON.parse(data)
-      
+
       if (this.isExpired(entry)) {
         await this.redis.removeItem(prefixedKey)
         this.stats.misses++
         return null
       }
-      
+
       entry.accessCount++
       entry.lastAccessed = Date.now()
       this.stats.hits++
-      
+
       // Update access info in Redis
       await this.redis.setItem(prefixedKey, JSON.stringify(entry))
-      
+
       return entry
-      
-    } catch (error) {
+    } catch {
       console.warn('Redis get error:', error)
       this.stats.misses++
       return null
@@ -310,16 +309,15 @@ class RedisCacheTier extends CacheTier {
 
   async set<T>(key: string, value: T, ttl: number, tags: string[] = []): Promise<void> {
     if (!this.redis) return
-    
+
     try {
       const entry = this.generateEntry(key, value, ttl, tags)
       const prefixedKey = `${this.config.keyPrefix}:${key}`
-      
+
       await this.redis.setItem(prefixedKey, JSON.stringify(entry), {
         ttl: ttl
       })
-      
-    } catch (error) {
+    } catch {
       console.warn('Redis set error:', error)
       throw new CacheError(
         `Failed to set cache entry: ${error}`,
@@ -331,12 +329,12 @@ class RedisCacheTier extends CacheTier {
 
   async delete(key: string): Promise<boolean> {
     if (!this.redis) return false
-    
+
     try {
       const prefixedKey = `${this.config.keyPrefix}:${key}`
       await this.redis.removeItem(prefixedKey)
       return true
-    } catch (error) {
+    } catch {
       console.warn('Redis delete error:', error)
       return false
     }
@@ -344,7 +342,7 @@ class RedisCacheTier extends CacheTier {
 
   async clear(pattern?: string): Promise<number> {
     if (!this.redis) return 0
-    
+
     try {
       if (pattern) {
         // For pattern-based clearing, we'd need to scan keys
@@ -355,15 +353,15 @@ class RedisCacheTier extends CacheTier {
         // Clear all keys with our prefix
         const keys = await this.redis.getKeys(`${this.config.keyPrefix}:*`)
         let deletedCount = 0
-        
+
         for (const key of keys) {
           await this.redis.removeItem(key)
           deletedCount++
         }
-        
+
         return deletedCount
       }
-    } catch (error) {
+    } catch {
       console.warn('Redis clear error:', error)
       return 0
     }
@@ -371,17 +369,16 @@ class RedisCacheTier extends CacheTier {
 
   async exists(key: string): Promise<boolean> {
     if (!this.redis) return false
-    
+
     try {
       const prefixedKey = `${this.config.keyPrefix}:${key}`
       const data = await this.redis.getItem(prefixedKey)
-      
+
       if (!data) return false
-      
+
       const entry = JSON.parse(data)
       return !this.isExpired(entry)
-      
-    } catch (error) {
+    } catch {
       return false
     }
   }
@@ -403,14 +400,14 @@ class BrowserCacheTier extends CacheTier {
   name = 'browser'
   private storage: Storage | null = null
   private stats = { hits: 0, misses: 0 }
-  
+
   constructor(private config: CacheConfig['tiers']['browser']) {
     super()
     this.initializeStorage()
   }
-  
+
   private initializeStorage() {
-    if (process.client) {
+    if (import.meta.client) {
       switch (this.config.storage) {
         case 'localStorage':
           this.storage = window.localStorage
@@ -434,33 +431,32 @@ class BrowserCacheTier extends CacheTier {
       this.stats.misses++
       return null
     }
-    
+
     try {
       const data = this.storage.getItem(`cache_${key}`)
-      
+
       if (!data) {
         this.stats.misses++
         return null
       }
-      
+
       const entry: CacheEntry<T> = JSON.parse(data)
-      
+
       if (this.isExpired(entry)) {
         this.storage.removeItem(`cache_${key}`)
         this.stats.misses++
         return null
       }
-      
+
       entry.accessCount++
       entry.lastAccessed = Date.now()
       this.stats.hits++
-      
+
       // Update access info
       this.storage.setItem(`cache_${key}`, JSON.stringify(entry))
-      
+
       return entry
-      
-    } catch (error) {
+    } catch {
       console.warn('Browser cache get error:', error)
       this.stats.misses++
       return null
@@ -469,18 +465,17 @@ class BrowserCacheTier extends CacheTier {
 
   async set<T>(key: string, value: T, ttl: number, tags: string[] = []): Promise<void> {
     if (!this.storage) return
-    
+
     try {
       const entry = this.generateEntry(key, value, ttl, tags)
-      
+
       // Check storage size limits
       if (this.shouldEvict()) {
         this.evictExpiredEntries()
       }
-      
+
       this.storage.setItem(`cache_${key}`, JSON.stringify(entry))
-      
-    } catch (error) {
+    } catch {
       if (error.name === 'QuotaExceededError') {
         // Try to free up space and retry
         this.evictExpiredEntries()
@@ -506,58 +501,56 @@ class BrowserCacheTier extends CacheTier {
 
   async delete(key: string): Promise<boolean> {
     if (!this.storage) return false
-    
+
     try {
       this.storage.removeItem(`cache_${key}`)
       return true
-    } catch (error) {
+    } catch {
       return false
     }
   }
 
   async clear(pattern?: string): Promise<number> {
     if (!this.storage) return 0
-    
+
     try {
       let deletedCount = 0
       const keysToDelete: string[] = []
-      
+
       // Collect keys to delete
       for (let i = 0; i < this.storage.length; i++) {
         const key = this.storage.key(i)
         if (key && key.startsWith('cache_')) {
           const cacheKey = key.substring(6) // Remove 'cache_' prefix
-          
+
           if (!pattern || new RegExp(pattern).test(cacheKey)) {
             keysToDelete.push(key)
           }
         }
       }
-      
+
       // Delete collected keys
       for (const key of keysToDelete) {
         this.storage.removeItem(key)
         deletedCount++
       }
-      
+
       return deletedCount
-      
-    } catch (error) {
+    } catch {
       return 0
     }
   }
 
   async exists(key: string): Promise<boolean> {
     if (!this.storage) return false
-    
+
     try {
       const data = this.storage.getItem(`cache_${key}`)
       if (!data) return false
-      
+
       const entry = JSON.parse(data)
       return !this.isExpired(entry)
-      
-    } catch (error) {
+    } catch {
       return false
     }
   }
@@ -566,10 +559,10 @@ class BrowserCacheTier extends CacheTier {
     if (!this.storage) {
       return { entries: 0, size: 0, hits: 0, misses: 0 }
     }
-    
+
     let entries = 0
     let totalSize = 0
-    
+
     for (let i = 0; i < this.storage.length; i++) {
       const key = this.storage.key(i)
       if (key && key.startsWith('cache_')) {
@@ -580,7 +573,7 @@ class BrowserCacheTier extends CacheTier {
         }
       }
     }
-    
+
     return {
       entries,
       size: totalSize,
@@ -588,11 +581,11 @@ class BrowserCacheTier extends CacheTier {
       misses: this.stats.misses
     }
   }
-  
+
   private shouldEvict(): boolean {
     // Simple size check - in production, would check actual storage usage
     if (!this.storage) return false
-    
+
     let totalSize = 0
     for (let i = 0; i < this.storage.length; i++) {
       const key = this.storage.key(i)
@@ -601,16 +594,16 @@ class BrowserCacheTier extends CacheTier {
         if (data) totalSize += data.length
       }
     }
-    
+
     const maxBytes = this.config.maxSizeMB * 1024 * 1024
     return totalSize > maxBytes * 0.8 // Start eviction at 80% capacity
   }
-  
+
   private evictExpiredEntries(): void {
     if (!this.storage) return
-    
+
     const expiredKeys: string[] = []
-    
+
     for (let i = 0; i < this.storage.length; i++) {
       const key = this.storage.key(i)
       if (key && key.startsWith('cache_')) {
@@ -622,13 +615,13 @@ class BrowserCacheTier extends CacheTier {
               expiredKeys.push(key)
             }
           }
-        } catch (error) {
+        } catch {
           // Remove invalid entries
           expiredKeys.push(key)
         }
       }
     }
-    
+
     for (const key of expiredKeys) {
       this.storage.removeItem(key)
     }
@@ -655,40 +648,40 @@ export class CacheManager {
    */
   async get<T>(key: string): Promise<T | null> {
     const startTime = Date.now()
-    
+
     for (const tier of this.tiers) {
       try {
         const entry = await tier.get<T>(key)
-        
+
         if (entry) {
           this.recordOperation({
             operation: 'get',
             key,
-            tier: tier.name as any,
+            tier: tier.name as 'memory' | 'redis' | 'browser',
             duration: Date.now() - startTime,
             success: true
           })
-          
+
           // Promote to higher tiers (cache warming)
           this.promoteToHigherTiers(key, entry, tier)
-          
+
           return entry.value
         }
-      } catch (error: any) {
+      } catch (error) {
         this.recordOperation({
           operation: 'get',
           key,
-          tier: tier.name as any,
+          tier: tier.name as 'memory' | 'redis' | 'browser',
           duration: Date.now() - startTime,
           success: false,
           error: error.message
         })
-        
+
         console.warn(`Cache tier ${tier.name} get error:`, error)
         continue
       }
     }
-    
+
     return null
   }
 
@@ -698,32 +691,32 @@ export class CacheManager {
   async set<T>(key: string, value: T, ttl?: number, tags: string[] = []): Promise<void> {
     const startTime = Date.now()
     const effectiveTtl = ttl || this.config.defaultTtl
-    
+
     const promises = this.tiers.map(async (tier) => {
       try {
         await tier.set(key, value, effectiveTtl, tags)
-        
+
         this.recordOperation({
           operation: 'set',
           key,
-          tier: tier.name as any,
+          tier: tier.name as 'memory' | 'redis' | 'browser',
           duration: Date.now() - startTime,
           success: true
         })
-      } catch (error: any) {
+      } catch (error) {
         this.recordOperation({
           operation: 'set',
           key,
-          tier: tier.name as any,
+          tier: tier.name as 'memory' | 'redis' | 'browser',
           duration: Date.now() - startTime,
           success: false,
           error: error.message
         })
-        
+
         console.warn(`Cache tier ${tier.name} set error:`, error)
       }
     })
-    
+
     // Wait for all tiers to complete (or fail)
     await Promise.allSettled(promises)
   }
@@ -734,36 +727,36 @@ export class CacheManager {
   async delete(key: string): Promise<boolean> {
     const startTime = Date.now()
     let anySuccess = false
-    
+
     const promises = this.tiers.map(async (tier) => {
       try {
         const success = await tier.delete(key)
-        
+
         this.recordOperation({
           operation: 'delete',
           key,
-          tier: tier.name as any,
+          tier: tier.name as 'memory' | 'redis' | 'browser',
           duration: Date.now() - startTime,
           success
         })
-        
+
         if (success) anySuccess = true
         return success
-      } catch (error: any) {
+      } catch (error) {
         this.recordOperation({
           operation: 'delete',
           key,
-          tier: tier.name as any,
+          tier: tier.name as 'memory' | 'redis' | 'browser',
           duration: Date.now() - startTime,
           success: false,
           error: error.message
         })
-        
+
         console.warn(`Cache tier ${tier.name} delete error:`, error)
         return false
       }
     })
-    
+
     await Promise.allSettled(promises)
     return anySuccess
   }
@@ -774,36 +767,36 @@ export class CacheManager {
   async clear(pattern?: string): Promise<number> {
     const startTime = Date.now()
     let totalDeleted = 0
-    
+
     const promises = this.tiers.map(async (tier) => {
       try {
         const deleted = await tier.clear(pattern)
-        
+
         this.recordOperation({
           operation: 'clear',
           key: pattern || '*',
-          tier: tier.name as any,
+          tier: tier.name as 'memory' | 'redis' | 'browser',
           duration: Date.now() - startTime,
           success: true
         })
-        
+
         totalDeleted += deleted
         return deleted
-      } catch (error: any) {
+      } catch (error) {
         this.recordOperation({
           operation: 'clear',
           key: pattern || '*',
-          tier: tier.name as any,
+          tier: tier.name as 'memory' | 'redis' | 'browser',
           duration: Date.now() - startTime,
           success: false,
           error: error.message
         })
-        
+
         console.warn(`Cache tier ${tier.name} clear error:`, error)
         return 0
       }
     })
-    
+
     await Promise.allSettled(promises)
     return totalDeleted
   }
@@ -817,12 +810,12 @@ export class CacheManager {
         if (await tier.exists(key)) {
           return true
         }
-      } catch (error) {
+      } catch {
         console.warn(`Cache tier ${tier.name} exists error:`, error)
         continue
       }
     }
-    
+
     return false
   }
 
@@ -835,30 +828,30 @@ export class CacheManager {
       redis: { entries: 0, size: 0, hits: 0, misses: 0 },
       browser: { entries: 0, size: 0, hits: 0, misses: 0 }
     }
-    
+
     let totalEntries = 0
     let totalSize = 0
-    
+
     for (const tier of this.tiers) {
       try {
         const stats = await tier.getStats()
         const tierName = tier.name as keyof typeof tierStats
-        
+
         if (tierStats[tierName]) {
           Object.assign(tierStats[tierName], stats)
           totalEntries += stats.entries || 0
           totalSize += stats.size || 0
         }
-      } catch (error) {
+      } catch {
         console.warn(`Error getting stats from ${tier.name}:`, error)
       }
     }
-    
+
     const totalRequests = this.operations.length
-    const successfulGets = this.operations.filter(op => 
+    const successfulGets = this.operations.filter(op =>
       op.operation === 'get' && op.success
     ).length
-    
+
     return {
       totalEntries,
       totalSize,
@@ -873,11 +866,11 @@ export class CacheManager {
   /**
    * Warm cache with preloaded data
    */
-  async warmCache(entries: Array<{ key: string; value: any; ttl?: number; tags?: string[] }>): Promise<void> {
-    const promises = entries.map(entry => 
+  async warmCache(entries: Array<{ key: string, value: unknown, ttl?: number, tags?: string[] }>): Promise<void> {
+    const promises = entries.map(entry =>
       this.set(entry.key, entry.value, entry.ttl, entry.tags)
     )
-    
+
     await Promise.allSettled(promises)
   }
 
@@ -888,12 +881,12 @@ export class CacheManager {
     // This would require a more sophisticated implementation
     // For now, we'll use pattern matching as a fallback
     let totalInvalidated = 0
-    
+
     for (const tag of tags) {
       const pattern = `*${tag}*`
       totalInvalidated += await this.clear(pattern)
     }
-    
+
     return totalInvalidated
   }
 
@@ -911,11 +904,11 @@ export class CacheManager {
     if (cached !== null) {
       return cached
     }
-    
+
     // Generate value and cache it
     const value = await factory()
     await this.set(key, value, ttl, tags)
-    
+
     return value
   }
 
@@ -927,7 +920,7 @@ export class CacheManager {
       clearInterval(this.cleanupTimer)
       this.cleanupTimer = null
     }
-    
+
     // Clear operation history
     this.operations = []
   }
@@ -954,19 +947,19 @@ export class CacheManager {
           cluster: false
         },
         browser: {
-          enabled: process.client,
+          enabled: import.meta.client,
           storage: 'localStorage',
           maxSizeMB: 10
         }
       }
     }
-    
+
     return this.deepMerge(defaultConfig, userConfig)
   }
-  
-  private deepMerge(target: any, source: any): any {
+
+  private deepMerge(target: unknown, source: unknown): unknown {
     const result = { ...target }
-    
+
     for (const key in source) {
       if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
         result[key] = this.deepMerge(target[key] || {}, source[key])
@@ -974,60 +967,60 @@ export class CacheManager {
         result[key] = source[key]
       }
     }
-    
+
     return result
   }
-  
+
   private initializeTiers(): void {
     if (this.config.tiers.memory.enabled) {
       this.tiers.push(new MemoryCacheTier(this.config.tiers.memory))
     }
-    
+
     if (this.config.tiers.redis.enabled) {
       this.tiers.push(new RedisCacheTier(this.config.tiers.redis))
     }
-    
+
     if (this.config.tiers.browser.enabled) {
       this.tiers.push(new BrowserCacheTier(this.config.tiers.browser))
     }
   }
-  
+
   private async promoteToHigherTiers(key: string, entry: CacheEntry, sourceTier: CacheTier): Promise<void> {
     const sourceTierIndex = this.tiers.findIndex(tier => tier.name === sourceTier.name)
-    
+
     // Promote to all higher priority tiers (lower index = higher priority)
     for (let i = 0; i < sourceTierIndex; i++) {
       try {
         const remainingTtl = Math.max(0, Math.ceil((entry.expiresAt - Date.now()) / 1000))
         await this.tiers[i].set(key, entry.value, remainingTtl, entry.tags)
-      } catch (error) {
+      } catch {
         console.warn(`Failed to promote cache entry to ${this.tiers[i].name}:`, error)
       }
     }
   }
-  
+
   private recordOperation(operation: CacheOperation): void {
     this.operations.push(operation)
-    
+
     // Keep only recent operations (last 1000)
     if (this.operations.length > 1000) {
       this.operations = this.operations.slice(-1000)
     }
   }
-  
+
   private startCleanupTimer(): void {
     this.cleanupTimer = setInterval(() => {
       this.performCleanup()
     }, this.config.cleanupInterval)
   }
-  
+
   private async performCleanup(): void {
     // Clean up operation history older than 1 hour
     const oneHourAgo = Date.now() - 3600000
-    this.operations = this.operations.filter(op => 
+    this.operations = this.operations.filter(op =>
       op.operation !== 'get' || Date.now() - oneHourAgo < 3600000
     )
-    
+
     // Trigger tier-specific cleanup if needed
     // This would be implemented per tier based on their cleanup strategies
   }
@@ -1050,12 +1043,12 @@ export function useCache(): CacheManager {
     globalCacheManager = createCacheManager({
       tiers: {
         memory: { enabled: true, maxEntries: 500, maxMemoryMB: 25 },
-        redis: { enabled: process.server, keyPrefix: 'spotify_cache' },
-        browser: { enabled: process.client, storage: 'localStorage', maxSizeMB: 5 }
+        redis: { enabled: import.meta.server, keyPrefix: 'spotify_cache' },
+        browser: { enabled: import.meta.client, storage: 'localStorage', maxSizeMB: 5 }
       }
     })
   }
-  
+
   return globalCacheManager
 }
 
