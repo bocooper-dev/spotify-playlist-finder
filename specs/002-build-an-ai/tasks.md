@@ -3,6 +3,22 @@
 **Input**: Design documents from `/specs/002-build-an-ai/`
 **Prerequisites**: plan.md (required), research.md, data-model.md, contracts/
 
+## 📚 Key Reference Documents
+- **Data Models**: `data-model.md` - TypeScript interfaces and validation rules
+- **API Contracts**: `contracts/api-contract.yaml` - OpenAPI endpoint specifications  
+- **Technical Decisions**: `research.md` - Architecture choices and implementation details
+- **Test Scenarios**: `quickstart.md` - User journeys and validation checklist
+- **Requirements**: `spec.md` - Functional requirements (FR-001 through FR-013)
+- **Architecture**: `plan.md` - Tech stack, libraries, and project structure
+
+## ⚠️ Critical Implementation Notes
+1. **TDD Enforcement**: Contract tests (T015-T018) MUST fail before implementation
+2. **Data Model Accuracy**: Copy interfaces exactly from `data-model.md` with line references
+3. **API Compliance**: All endpoints must match `api-contract.yaml` schemas
+4. **Performance Goals**: <2 min search, <3s page load (`plan.md` line 41)
+5. **Rate Limits**: 180 req/min for Spotify API (`research.md` Key Findings)
+6. **Caching**: 5 min server TTL, 15 min client TTL (`research.md` Caching Strategy)
+
 ## Execution Flow (main)
 ```
 1. Load plan.md from feature directory
@@ -55,53 +71,121 @@
 - [ ] T008 Setup Vitest testing framework and Playwright for E2E tests
 
 ## Phase 3.2: Data Models & Types (TDD - Create Types First)
-- [ ] T009 [P] Create Playlist interface in types/playlist.ts
+**Reference**: See `data-model.md` for complete specifications
+- [ ] T009 [P] Create Playlist interface in types/playlist.ts 
+  - Copy from `data-model.md` lines 9-23
+  - Include: id, name, url, followerCount, owner, genres fields
 - [ ] T010 [P] Create PlaylistOwner and ContactInfo interfaces in types/owner.ts
+  - Copy from `data-model.md` lines 30-62
+  - Include ContactStatus enum and SocialLink interface
 - [ ] T011 [P] Create SearchRequest and SearchResult interfaces in types/search.ts
+  - Copy from `data-model.md` lines 69-88
+  - Include SearchMetadata interface (lines 95-102)
 - [ ] T012 [P] Create Genre interface in types/genre.ts
+  - Copy from `data-model.md` lines 106-113
+  - Include relatedGenres array for padding feature
 - [ ] T013 [P] Create ExportData interfaces in types/export.ts
+  - Copy from `data-model.md` lines 117-141
+  - Include both ExportData and ExportPlaylist interfaces
 - [ ] T014 [P] Create ApplicationState interfaces in types/state.ts
+  - Copy from `data-model.md` lines 147-176
+  - Include UserSession, SearchState, CacheState, UIState
 
 ## Phase 3.3: Contract Tests (MUST FAIL FIRST) ⚠️
 **CRITICAL: These tests MUST be written and MUST FAIL before ANY implementation**
+**Reference**: See `contracts/api-contract.yaml` for OpenAPI specifications
 - [ ] T015 [P] Contract test GET /api/spotify/genres in tests/contract/test_genres.spec.ts
+  - Test against `api-contract.yaml` lines 14-34
+  - Verify Genre schema compliance
 - [ ] T016 [P] Contract test POST /api/spotify/search in tests/contract/test_search.spec.ts
+  - Test against `api-contract.yaml` lines 36-59
+  - Validate SearchRequest/SearchResult schemas
 - [ ] T017 [P] Contract test GET /api/spotify/playlist/:id in tests/contract/test_playlist.spec.ts
+  - Test against `api-contract.yaml` lines 61-77
+  - Verify Playlist schema with all nested objects
 - [ ] T018 [P] Contract test POST /api/export in tests/contract/test_export.spec.ts
+  - Test against `api-contract.yaml` lines 79-103
+  - Test both CSV and JSON response formats
 
 ## Phase 3.4: N8N Workflows & Apify Integration
+**Reference**: See `research.md` - Spotify API Integration & Caching Strategy sections
 - [ ] T019 Create N8N workflow for Spotify authentication and token management
+  - Implement Client Credentials Flow (`research.md` OAuth 2.0 section)
+  - Token refresh logic with expiry handling
 - [ ] T020 Create N8N workflow for genre validation using Spotify API
+  - Use `/recommendations/available-genre-seeds` endpoint (`research.md` Genre Validation)
 - [ ] T021 Configure Apify actor for scraping additional playlist metadata
+  - Extract social links from playlist descriptions
+  - Scrape owner profile for contact info
 - [ ] T022 Create N8N workflow connecting to Apify for enhanced playlist data
+  - Webhook trigger from Nuxt app
+  - Merge Apify data with Spotify API response
 - [ ] T023 Setup N8N webhook endpoints for async processing
+  - Rate limit handling with queue management
 - [ ] T024 Create error handling and retry logic in N8N workflows
+  - Exponential backoff (`research.md` Error Handling section)
 
 ## Phase 3.5: Libraries Implementation
+**Reference**: See `plan.md` Architecture section & `research.md` Technical Decisions
 - [ ] T025 [P] Create spotify-client library in lib/spotify-client/index.ts with OAuth flow
+  - Implement Client Credentials Flow (`research.md` Spotify API Integration)
+  - Rate limiting: 180 requests/minute (`research.md` Key Findings)
+  - Use Spotify Web API SDK (`plan.md` line 36)
 - [ ] T026 [P] Create export-utils library in lib/export-utils/index.ts for CSV/JSON generation
+  - Client-side generation using Blob API (`research.md` Export Implementation)
+  - Support formats from `data-model.md` ExportData interface
 - [ ] T027 [P] Create cache-manager library in lib/cache-manager/index.ts for localStorage/session
+  - Hybrid caching strategy (`research.md` Caching Strategy)
+  - 5 min server TTL, 15 min client TTL
+  - Cache key: hash of genres + follower minimum
 - [ ] T028 [P] Add CLI interface for spotify-client in lib/spotify-client/cli.ts
+  - Commands: --search, --get-genres, --get-playlist
 - [ ] T029 [P] Add CLI interface for export-utils in lib/export-utils/cli.ts
+  - Commands: --to-csv, --to-json, --format
 - [ ] T030 [P] Add CLI interface for cache-manager in lib/cache-manager/cli.ts
+  - Commands: --get, --set, --clear, --list
 
 ## Phase 3.6: API Implementation (Server Routes)
+**Reference**: Implement endpoints defined in `contracts/api-contract.yaml`
 - [ ] T031 Implement GET /api/spotify/genres in server/api/spotify/genres.get.ts
+  - Return Genre[] from `api-contract.yaml` lines 27-32
+  - Use spotify-client library from T025
 - [ ] T032 Implement POST /api/spotify/search in server/api/spotify/search.post.ts
+  - Accept SearchRequest (`api-contract.yaml` lines 45-46)
+  - Return SearchResult with exactly 50 playlists
+  - Implement padding logic if <50 results (`spec.md` edge cases)
 - [ ] T033 Implement GET /api/spotify/playlist/[id] in server/api/spotify/playlist/[id].get.ts
+  - Return Playlist with owner details (`api-contract.yaml` lines 66-77)
 - [ ] T034 Implement POST /api/export in server/api/export.post.ts
+  - Support CSV and JSON formats (`api-contract.yaml` lines 86-103)
+  - Use export-utils library from T026
 - [ ] T035 Create N8N webhook handler in server/api/webhooks/n8n.post.ts
+  - Handle async Apify results
 - [ ] T036 Implement rate limiting middleware in server/middleware/rateLimit.ts
+  - Per-user limits (`research.md` Security Considerations)
 - [ ] T037 Add structured logging middleware in server/middleware/logging.ts
+  - Log format per `plan.md` Observability section
 
 ## Phase 3.7: UI Components (Nuxt UI Pro)
+**Reference**: Use Nuxt UI Pro components per `research.md` UI Component Strategy
 - [ ] T038 Create PlaylistSearchForm component in components/PlaylistSearchForm.vue using UForm
+  - Validate 1-10 genres (`spec.md` FR-001)
+  - Minimum follower input with validation (`spec.md` FR-005)
 - [ ] T039 Create PlaylistTable component in components/PlaylistTable.vue using UTable
+  - Display 50 playlists (`spec.md` FR-005)
+  - Virtual scrolling for performance (`research.md` Performance Optimizations)
 - [ ] T040 Create PlaylistCard component in components/PlaylistCard.vue using UCard
+  - Show playlist image, name, follower count
+  - Display owner info per `data-model.md` PlaylistOwner
 - [ ] T041 Create ExportButtons component in components/ExportButtons.vue using UButton
+  - CSV and JSON export options (`spec.md` FR-013)
 - [ ] T042 Create GenreSelector component in components/GenreSelector.vue using USelectMenu
+  - Load genres from /api/spotify/genres
+  - Max 10 selections (`spec.md` constraints)
 - [ ] T043 [P] Create LoadingState component in components/LoadingState.vue using USkeleton
+  - Show during API calls
 - [ ] T044 [P] Create ErrorAlert component in components/ErrorAlert.vue using UAlert
+  - Display API errors with retry option
 
 ## Phase 3.8: Pages & Routing
 - [ ] T045 Create main search page in pages/index.vue with search form and results
@@ -118,11 +202,18 @@
 - [ ] T054 Setup Pinia store for global state in stores/playlist.ts
 
 ## Phase 3.10: Integration Tests
+**Reference**: Test scenarios from `quickstart.md` Feature Walkthrough section
 - [ ] T055 [P] Integration test: Complete search flow in tests/integration/search-flow.spec.ts
+  - Test Basic Playlist Search scenario (`quickstart.md` lines 58-73)
+  - Verify 50 playlists returned with all required fields
 - [ ] T056 [P] Integration test: Export functionality in tests/integration/export.spec.ts
+  - Test CSV and JSON export (`quickstart.md` lines 86-95)
 - [ ] T057 [P] Integration test: Caching behavior in tests/integration/cache.spec.ts
+  - Test cache hit/miss scenarios (`quickstart.md` lines 97-108)
 - [ ] T058 [P] Integration test: N8N workflow triggers in tests/integration/n8n-workflow.spec.ts
+  - Test webhook integration with N8N
 - [ ] T059 [P] E2E test: Full user journey in tests/e2e/user-journey.spec.ts
+  - Run all test scenarios from `quickstart.md` lines 160-180
 
 ## Phase 3.11: Vercel Deployment & GitHub Actions
 - [ ] T060 Configure vercel.json with build settings and environment variables
