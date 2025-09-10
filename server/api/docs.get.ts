@@ -1,24 +1,24 @@
 /**
  * GET /api/docs
- * 
+ *
  * Serves interactive API documentation using Swagger UI.
  * Loads OpenAPI specification and renders interactive interface.
  */
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
-  
+
   // If requesting JSON spec
   if (query.format === 'json') {
     setHeader(event, 'Content-Type', 'application/json')
-    
-    const openApiSpec = await import('~/docs/api-contract.yaml')
+
+    const openApiSpec = await import('../../specs/001-build-an-ai/contracts/api-contract.yaml')
     return openApiSpec.default || openApiSpec
   }
-  
+
   // Serve Swagger UI HTML
   setHeader(event, 'Content-Type', 'text/html')
-  
+
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -73,7 +73,7 @@ export default defineEventHandler(async (event) => {
         <h1>🎵 Spotify Playlist Discovery API</h1>
         <p>Find popular Spotify playlists by genre with owner contact information</p>
     </div>
-    
+
     <div id="swagger-ui"></div>
 
     <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>

@@ -1,25 +1,25 @@
 /**
  * Global API Middleware
- * 
+ *
  * Provides common functionality across all API endpoints:
  * - Request/response logging
  * - Security headers
- * - CORS handling  
+ * - CORS handling
  * - Request validation
  * - Performance monitoring
  */
 
-import { useErrorHandler, createErrorContext } from '~/lib/error-utils'
+import { createErrorContext, useErrorHandler } from '../.././lib/error-utils'
 
 export default defineEventHandler(async (event) => {
   // Only apply to API routes
   if (!event.node.req.url?.startsWith('/api/')) {
     return
   }
-  
+
   const startTime = Date.now()
   const requestId = Math.random().toString(36).substring(2, 15)
-  
+
   try {
     // Set common headers
     setHeaders(event, {
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
       'X-XSS-Protection': '1; mode=block',
       'Referrer-Policy': 'strict-origin-when-cross-origin'
     })
-    
+
     // CORS handling
     const origin = getHeader(event, 'origin')
     const allowedOrigins = [
@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
       'http://localhost:3000',
       'https://127.0.0.1:3000'
     ].filter(Boolean)
-    
+
     if (origin && allowedOrigins.includes(origin)) {
       setHeaders(event, {
         'Access-Control-Allow-Origin': origin,
@@ -51,13 +51,13 @@ export default defineEventHandler(async (event) => {
         'Access-Control-Allow-Credentials': 'true'
       })
     }
-    
+
     // Handle preflight requests
     if (event.node.req.method === 'OPTIONS') {
       setResponseStatus(event, 200)
       return ''
     }
-    
+
     // Request size validation
     const contentLength = getHeader(event, 'content-length')
     if (contentLength && parseInt(contentLength) > 10 * 1024 * 1024) { // 10MB limit
@@ -73,7 +73,7 @@ export default defineEventHandler(async (event) => {
         }
       })
     }
-    
+
     // Content-Type validation for POST requests
     if (event.node.req.method === 'POST') {
       const contentType = getHeader(event, 'content-type')
@@ -91,12 +91,11 @@ export default defineEventHandler(async (event) => {
         })
       }
     }
-    
+
     // Log request (in development)
     if (process.env.NODE_ENV === 'development') {
       console.log(`[API] ${event.node.req.method} ${event.node.req.url} - ${getClientIP(event)}`)
     }
-    
   } catch (error: any) {
     const context = createErrorContext('api-middleware', {
       requestId,
@@ -105,14 +104,14 @@ export default defineEventHandler(async (event) => {
       ip: getClientIP(event),
       userAgent: getHeader(event, 'user-agent')
     })
-    
+
     const errorHandler = useErrorHandler()
     await errorHandler.handleError(error, context)
-    
+
     // Re-throw to let the route handler deal with it
     throw error
   }
-  
+
   // Performance monitoring hook
   event.context.startTime = startTime
   event.context.requestId = requestId

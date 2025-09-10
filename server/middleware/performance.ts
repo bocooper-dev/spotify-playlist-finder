@@ -1,6 +1,6 @@
 /**
  * Performance Middleware
- * 
+ *
  * Provides performance optimization features:
  * - Response compression
  * - Caching headers
@@ -8,48 +8,46 @@
  * - Response size optimization
  */
 
-import { useCache } from '~/lib/cache-manager'
-import { createErrorContext } from '~/lib/error-utils'
 
 export default defineEventHandler(async (event) => {
   // Only apply to API routes
   if (!event.node.req.url?.startsWith('/api/')) {
     return
   }
-  
+
   const startTime = Date.now()
   const url = event.node.req.url
   const method = event.node.req.method || 'GET'
-  
+
   // Set cache headers based on endpoint
   setCacheHeaders(event, url, method)
-  
+
   // Enable compression for JSON responses
   if (getHeader(event, 'accept-encoding')?.includes('gzip')) {
     setHeader(event, 'Vary', 'Accept-Encoding')
   }
-  
+
   // Performance monitoring
   const originalSetHeader = event.node.res.setHeader
   let responseSize = 0
-  
+
   // Monitor response size
-  event.node.res.setHeader = function(name: string, value: string | string[] | number) {
+  event.node.res.setHeader = function (name: string, value: string | string[] | number) {
     if (name.toLowerCase() === 'content-length') {
       responseSize = typeof value === 'number' ? value : parseInt(String(value)) || 0
     }
     return originalSetHeader.call(this, name, value)
   }
-  
+
   // Hook into response end to collect metrics
   const originalEnd = event.node.res.end
-  event.node.res.end = function(chunk?: any, encoding?: any) {
+  event.node.res.end = function (chunk?: any, encoding?: any) {
     const responseTime = Date.now() - startTime
-    
+
     // Set performance headers
     setHeader(event, 'X-Response-Time', `${responseTime}ms`)
     setHeader(event, 'X-Process-Time', `${process.uptime()}s`)
-    
+
     // Log performance metrics
     collectPerformanceMetrics({
       endpoint: url,
@@ -58,7 +56,7 @@ export default defineEventHandler(async (event) => {
       responseSize: responseSize || (chunk ? Buffer.byteLength(chunk) : 0),
       statusCode: event.node.res.statusCode || 200
     })
-    
+
     return originalEnd.call(this, chunk, encoding)
   }
 })
@@ -76,7 +74,7 @@ function setCacheHeaders(event: any, url: string, method: string) {
     })
     return
   }
-  
+
   // Set cache headers based on endpoint patterns
   if (url.includes('/api/spotify/genres')) {
     // Genres change infrequently - cache for 1 hour
@@ -123,20 +121,20 @@ const MAX_METRICS_BUFFER = 1000
 
 function collectPerformanceMetrics(metric: PerformanceMetric) {
   metric.timestamp = Date.now()
-  
+
   // Add to buffer
   metricsBuffer.push(metric)
-  
+
   // Trim buffer if too large
   if (metricsBuffer.length > MAX_METRICS_BUFFER) {
     metricsBuffer.splice(0, metricsBuffer.length - MAX_METRICS_BUFFER)
   }
-  
+
   // Log slow requests
   if (metric.responseTime > 2000) {
     console.warn(`[SLOW REQUEST] ${metric.method} ${metric.endpoint} took ${metric.responseTime}ms`)
   }
-  
+
   // Log large responses
   if (metric.responseSize > 1024 * 1024) { // 1MB
     console.warn(`[LARGE RESPONSE] ${metric.method} ${metric.endpoint} returned ${(metric.responseSize / 1024 / 1024).toFixed(2)}MB`)
@@ -157,18 +155,18 @@ export function getPerformanceStats() {
       endpointStats: {}
     }
   }
-  
+
   const totalRequests = metricsBuffer.length
   const averageResponseTime = metricsBuffer.reduce((sum, m) => sum + m.responseTime, 0) / totalRequests
   const averageResponseSize = metricsBuffer.reduce((sum, m) => sum + m.responseSize, 0) / totalRequests
   const slowRequests = metricsBuffer.filter(m => m.responseTime > 2000).length
   const errorRequests = metricsBuffer.filter(m => m.statusCode >= 400).length
   const errorRate = (errorRequests / totalRequests) * 100
-  
+
   // Group by endpoint
   const endpointStats: Record<string, any> = {}
-  
-  metricsBuffer.forEach(metric => {
+
+  metricsBuffer.forEach((metric) => {
     if (!endpointStats[metric.endpoint]) {
       endpointStats[metric.endpoint] = {
         requests: 0,
@@ -177,29 +175,29 @@ export function getPerformanceStats() {
         errors: 0
       }
     }
-    
+
     const stats = endpointStats[metric.endpoint]
     stats.requests++
     stats.totalResponseTime += metric.responseTime
     stats.totalResponseSize += metric.responseSize
-    
+
     if (metric.statusCode >= 400) {
       stats.errors++
     }
   })
-  
+
   // Calculate averages per endpoint
-  Object.keys(endpointStats).forEach(endpoint => {
+  Object.keys(endpointStats).forEach((endpoint) => {
     const stats = endpointStats[endpoint]
     stats.averageResponseTime = stats.totalResponseTime / stats.requests
     stats.averageResponseSize = stats.totalResponseSize / stats.requests
     stats.errorRate = (stats.errors / stats.requests) * 100
-    
+
     // Remove totals to keep response clean
     delete stats.totalResponseTime
     delete stats.totalResponseSize
   })
-  
+
   return {
     totalRequests,
     averageResponseTime: Math.round(averageResponseTime),

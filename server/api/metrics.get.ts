@@ -1,20 +1,20 @@
 /**
  * GET /api/metrics
- * 
+ *
  * Metrics endpoint for monitoring systems (Prometheus compatible).
  * Returns detailed performance and usage metrics.
  */
 
+import { useCache } from '../.././lib/cache-manager'
+import { useErrorHandler } from '../.././lib/error-utils'
+import { useRateLimiter } from '../.././lib/rate-limiter'
 import { getPerformanceStats } from '../middleware/performance'
-import { useCache } from '~/lib/cache-manager'
-import { useRateLimiter } from '~/lib/rate-limiter'
-import { useErrorHandler } from '~/lib/error-utils'
 
 export default defineEventHandler(async (event) => {
   // Check for authorization (basic protection)
   const authHeader = getHeader(event, 'authorization')
   const metricsKey = process.env.METRICS_API_KEY
-  
+
   if (metricsKey && authHeader !== `Bearer ${metricsKey}`) {
     throw createError({
       statusCode: 401,
@@ -22,14 +22,14 @@ export default defineEventHandler(async (event) => {
       data: { error: 'Invalid or missing API key' }
     })
   }
-  
+
   setHeaders(event, {
     'Content-Type': 'text/plain; version=0.0.4',
     'Cache-Control': 'no-cache, no-store, must-revalidate'
   })
-  
+
   const startTime = Date.now()
-  
+
   try {
     // Collect metrics from various sources
     const performanceStats = getPerformanceStats()
@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
     const rateLimitStats = getRateLimitMetrics()
     const errorStats = getErrorMetrics()
     const systemStats = getSystemMetrics()
-    
+
     // Generate Prometheus format metrics
     const metrics = generatePrometheusMetrics({
       performance: performanceStats,
@@ -47,12 +47,11 @@ export default defineEventHandler(async (event) => {
       system: systemStats,
       scrapeTime: Date.now() - startTime
     })
-    
+
     return metrics
-    
   } catch (error: any) {
     console.error('Metrics collection failed:', error)
-    
+
     // Return minimal metrics on error
     return `# HELP spotify_metrics_error Metrics collection error
 # TYPE spotify_metrics_error counter
@@ -134,7 +133,7 @@ function getSystemMetrics() {
   try {
     const memUsage = process.memoryUsage()
     const cpuUsage = process.cpuUsage()
-    
+
     return {
       memory: {
         heapUsed: memUsage.heapUsed,
@@ -168,7 +167,7 @@ function getSystemMetrics() {
  */
 function generatePrometheusMetrics(data: any): string {
   const lines: string[] = []
-  
+
   // Helper function to add metric
   const addMetric = (name: string, type: string, help: string, value: number, labels = '') => {
     lines.push(`# HELP ${name} ${help}`)
@@ -176,7 +175,7 @@ function generatePrometheusMetrics(data: any): string {
     lines.push(`${name}${labels} ${value}`)
     lines.push('')
   }
-  
+
   // Performance metrics
   addMetric(
     'spotify_http_requests_total',
@@ -184,35 +183,35 @@ function generatePrometheusMetrics(data: any): string {
     'Total number of HTTP requests',
     data.performance.totalRequests
   )
-  
+
   addMetric(
     'spotify_http_request_duration_ms',
     'gauge',
     'Average HTTP request duration in milliseconds',
     data.performance.averageResponseTime
   )
-  
+
   addMetric(
     'spotify_http_response_size_bytes',
     'gauge',
     'Average HTTP response size in bytes',
     data.performance.averageResponseSize
   )
-  
+
   addMetric(
     'spotify_http_slow_requests_total',
     'counter',
     'Total number of slow requests (>2s)',
     data.performance.slowRequests
   )
-  
+
   addMetric(
     'spotify_http_error_rate_percent',
     'gauge',
     'HTTP error rate percentage',
     data.performance.errorRate
   )
-  
+
   // Cache metrics
   addMetric(
     'spotify_cache_entries_total',
@@ -220,28 +219,28 @@ function generatePrometheusMetrics(data: any): string {
     'Total number of cache entries',
     data.cache.totalEntries
   )
-  
+
   addMetric(
     'spotify_cache_size_bytes',
     'gauge',
     'Total cache size in bytes',
     data.cache.totalSize
   )
-  
+
   addMetric(
     'spotify_cache_hit_rate_percent',
     'gauge',
     'Cache hit rate percentage',
     data.cache.hitRate
   )
-  
+
   addMetric(
     'spotify_cache_evictions_total',
     'counter',
     'Total number of cache evictions',
     data.cache.evictionCount
   )
-  
+
   // Cache tier metrics
   Object.entries(data.cache.tierStats).forEach(([tier, stats]: [string, any]) => {
     addMetric(
@@ -251,7 +250,7 @@ function generatePrometheusMetrics(data: any): string {
       stats.entries,
       `{tier="${tier}"}`
     )
-    
+
     addMetric(
       'spotify_cache_tier_hits_total',
       'counter',
@@ -259,7 +258,7 @@ function generatePrometheusMetrics(data: any): string {
       stats.hits,
       `{tier="${tier}"}`
     )
-    
+
     addMetric(
       'spotify_cache_tier_misses_total',
       'counter',
@@ -268,7 +267,7 @@ function generatePrometheusMetrics(data: any): string {
       `{tier="${tier}"}`
     )
   })
-  
+
   // Rate limiting metrics
   addMetric(
     'spotify_rate_limit_requests_total',
@@ -276,35 +275,35 @@ function generatePrometheusMetrics(data: any): string {
     'Total number of rate limit checks',
     data.rateLimit.totalRequests
   )
-  
+
   addMetric(
     'spotify_rate_limit_blocked_total',
     'counter',
     'Total number of blocked requests',
     data.rateLimit.blockedRequests
   )
-  
+
   addMetric(
     'spotify_rate_limit_burst_requests_total',
     'counter',
     'Total number of burst requests',
     data.rateLimit.burstRequests
   )
-  
+
   addMetric(
     'spotify_rate_limit_backoff_triggers_total',
     'counter',
     'Total number of backoff triggers',
     data.rateLimit.backoffTriggers
   )
-  
+
   addMetric(
     'spotify_rate_limit_wait_time_ms',
     'gauge',
     'Average wait time for rate limiting in milliseconds',
     data.rateLimit.averageWaitTime
   )
-  
+
   // Error metrics
   addMetric(
     'spotify_errors_total',
@@ -312,28 +311,28 @@ function generatePrometheusMetrics(data: any): string {
     'Total number of errors',
     data.errors.totalErrors
   )
-  
+
   addMetric(
     'spotify_error_recovery_success_total',
     'counter',
     'Total number of successful error recoveries',
     data.errors.recoverySuccess
   )
-  
+
   addMetric(
     'spotify_error_recovery_failures_total',
     'counter',
     'Total number of failed error recoveries',
     data.errors.recoveryFailures
   )
-  
+
   addMetric(
     'spotify_circuit_breaker_trips_total',
     'counter',
     'Total number of circuit breaker trips',
     data.errors.circuitBreakerTrips
   )
-  
+
   // Error by type
   Object.entries(data.errors.errorsByType).forEach(([type, count]: [string, any]) => {
     addMetric(
@@ -344,7 +343,7 @@ function generatePrometheusMetrics(data: any): string {
       `{type="${type}"}`
     )
   })
-  
+
   // Error by severity
   Object.entries(data.errors.errorsBySeverity).forEach(([severity, count]: [string, any]) => {
     addMetric(
@@ -355,7 +354,7 @@ function generatePrometheusMetrics(data: any): string {
       `{severity="${severity}"}`
     )
   })
-  
+
   // System metrics
   addMetric(
     'spotify_memory_heap_used_bytes',
@@ -363,49 +362,49 @@ function generatePrometheusMetrics(data: any): string {
     'Memory heap used in bytes',
     data.system.memory.heapUsed
   )
-  
+
   addMetric(
     'spotify_memory_heap_total_bytes',
     'gauge',
     'Memory heap total in bytes',
     data.system.memory.heapTotal
   )
-  
+
   addMetric(
     'spotify_memory_external_bytes',
     'gauge',
     'External memory in bytes',
     data.system.memory.external
   )
-  
+
   addMetric(
     'spotify_memory_rss_bytes',
     'gauge',
     'Resident set size in bytes',
     data.system.memory.rss
   )
-  
+
   addMetric(
     'spotify_cpu_user_microseconds',
     'counter',
     'CPU user time in microseconds',
     data.system.cpu.user
   )
-  
+
   addMetric(
     'spotify_cpu_system_microseconds',
     'counter',
     'CPU system time in microseconds',
     data.system.cpu.system
   )
-  
+
   addMetric(
     'spotify_uptime_seconds',
     'gauge',
     'Process uptime in seconds',
     data.system.uptime
   )
-  
+
   // Scrape metrics
   addMetric(
     'spotify_metrics_scrape_duration_ms',
@@ -413,6 +412,6 @@ function generatePrometheusMetrics(data: any): string {
     'Time taken to collect metrics in milliseconds',
     data.scrapeTime
   )
-  
+
   return lines.join('\n')
 }

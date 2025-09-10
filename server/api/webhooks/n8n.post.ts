@@ -1,6 +1,6 @@
 /**
  * N8N Webhook Handler
- * 
+ *
  * Receives webhook notifications from N8N workflows and processes them accordingly.
  * This endpoint serves as the central hub for N8N workflow notifications.
  */
@@ -8,11 +8,11 @@
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const headers = getHeaders(event)
-  
+
   // Validate webhook signature/authentication
   const webhookSecret = useRuntimeConfig().n8nWebhookSecret
   const receivedSignature = headers['x-n8n-signature']
-  
+
   if (!receivedSignature || !validateWebhookSignature(body, receivedSignature, webhookSecret)) {
     throw createError({
       statusCode: 401,
@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const { event: eventType, ...eventData } = body
-    
+
     console.log(`[N8N Webhook] Received event: ${eventType}`, {
       timestamp: new Date().toISOString(),
       data: eventData
@@ -32,19 +32,19 @@ export default defineEventHandler(async (event) => {
       case 'spotify_token_refreshed':
         await handleSpotifyTokenRefresh(eventData)
         break
-        
+
       case 'playlist_enhancement_completed':
         await handlePlaylistEnhancementCompletion(eventData)
         break
-        
+
       case 'apify_actor_maintenance_alert':
         await handleApifyMaintenanceAlert(eventData)
         break
-        
+
       case 'genre_cache_updated':
         await handleGenreCacheUpdate(eventData)
         break
-        
+
       default:
         console.warn(`[N8N Webhook] Unknown event type: ${eventType}`)
         break
@@ -56,10 +56,9 @@ export default defineEventHandler(async (event) => {
       eventType,
       timestamp: new Date().toISOString()
     }
-    
   } catch (error: any) {
     console.error('[N8N Webhook] Processing error:', error)
-    
+
     throw createError({
       statusCode: 500,
       statusMessage: 'Webhook processing failed',
@@ -76,7 +75,7 @@ export default defineEventHandler(async (event) => {
  */
 function validateWebhookSignature(payload: any, signature: string, secret: string): boolean {
   if (!signature || !secret) return false
-  
+
   try {
     const crypto = require('crypto')
     const payloadString = typeof payload === 'string' ? payload : JSON.stringify(payload)
@@ -84,7 +83,7 @@ function validateWebhookSignature(payload: any, signature: string, secret: strin
       .createHmac('sha256', secret)
       .update(payloadString)
       .digest('hex')
-    
+
     return crypto.timingSafeEqual(
       Buffer.from(signature, 'hex'),
       Buffer.from(expectedSignature, 'hex')
@@ -108,9 +107,9 @@ async function handleSpotifyTokenRefresh(data: {
     await redis.setItem('spotify_access_token', data.token, {
       ttl: new Date(data.expires_at).getTime() - Date.now()
     })
-    
+
     console.log('[Spotify Token] Token refreshed and cached locally')
-    
+
     // Notify relevant services about token refresh
     await $fetch('/api/internal/spotify/token-refreshed', {
       method: 'POST',
@@ -118,10 +117,9 @@ async function handleSpotifyTokenRefresh(data: {
         expires_at: data.expires_at,
         refreshed_at: new Date().toISOString()
       }
-    }).catch(error => {
+    }).catch((error) => {
       console.warn('[Spotify Token] Failed to notify services:', error.message)
     })
-    
   } catch (error: any) {
     console.error('[Spotify Token] Refresh handling error:', error)
     throw error
@@ -142,7 +140,7 @@ async function handlePlaylistEnhancementCompletion(data: {
       errors: data.errorCount,
       successRate: data.successCount / (data.successCount + data.errorCount) * 100
     })
-    
+
     // Update enhancement job status
     const redis = useStorage('redis')
     await redis.setItem(`enhancement_status_${data.requestId}`, {
@@ -153,7 +151,7 @@ async function handlePlaylistEnhancementCompletion(data: {
     }, {
       ttl: 3600 // Keep status for 1 hour
     })
-    
+
     // Send real-time notification to client if WebSocket connection exists
     await notifyClient(data.requestId, {
       type: 'enhancement_completed',
@@ -162,10 +160,9 @@ async function handlePlaylistEnhancementCompletion(data: {
         successCount: data.successCount,
         errorCount: data.errorCount
       }
-    }).catch(error => {
+    }).catch((error) => {
       console.warn('[Playlist Enhancement] Client notification failed:', error.message)
     })
-    
   } catch (error: any) {
     console.error('[Playlist Enhancement] Completion handling error:', error)
     throw error
@@ -185,7 +182,7 @@ async function handleApifyMaintenanceAlert(data: {
       message: data.message,
       timestamp: new Date().toISOString()
     })
-    
+
     // Store maintenance status
     const redis = useStorage('redis')
     await redis.setItem(`apify_actor_status_${data.actorId}`, {
@@ -195,16 +192,16 @@ async function handleApifyMaintenanceAlert(data: {
     }, {
       ttl: 7200 // Keep for 2 hours
     })
-    
+
     // If actor is unavailable, disable enhancement features temporarily
     if (data.status === 'unavailable') {
       await redis.setItem('enhancement_disabled', true, {
         ttl: 1800 // Disable for 30 minutes
       })
-      
+
       console.warn('[Apify Maintenance] Enhancement features temporarily disabled')
     }
-    
+
     // Send alert to monitoring system
     await sendMaintenanceAlert({
       service: 'Apify Actor',
@@ -212,10 +209,9 @@ async function handleApifyMaintenanceAlert(data: {
       status: data.status,
       message: data.message,
       severity: data.status === 'unavailable' ? 'high' : 'medium'
-    }).catch(error => {
+    }).catch((error) => {
       console.warn('[Apify Maintenance] Alert sending failed:', error.message)
     })
-    
   } catch (error: any) {
     console.error('[Apify Maintenance] Alert handling error:', error)
     throw error
@@ -231,7 +227,7 @@ async function handleGenreCacheUpdate(data: {
 }) {
   try {
     console.log(`[Genre Cache] Updated with ${data.genreCount} genres at ${data.updatedAt}`)
-    
+
     // Update local cache metadata
     const redis = useStorage('redis')
     await redis.setItem('genre_cache_metadata', {
@@ -241,10 +237,9 @@ async function handleGenreCacheUpdate(data: {
     }, {
       ttl: 86400 // Keep metadata for 24 hours
     })
-    
+
     // Invalidate any stale genre-related caches
     await invalidateGenreRelatedCaches()
-    
   } catch (error: any) {
     console.error('[Genre Cache] Update handling error:', error)
     throw error
@@ -279,12 +274,12 @@ async function sendMaintenanceAlert(alert: {
  */
 async function invalidateGenreRelatedCaches() {
   const redis = useStorage('redis')
-  
+
   // Clear genre validation caches
   const keys = await redis.getKeys('genre_validation_*')
   for (const key of keys) {
     await redis.removeItem(key)
   }
-  
+
   console.log(`[Cache Invalidation] Cleared ${keys.length} genre-related cache entries`)
 }
