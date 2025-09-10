@@ -1,0 +1,28 @@
+{
+  "name": "spotify-playlist-scraper",
+  "version": "1.0.0",
+  "description": "Apify actor for scraping Spotify playlist data to complement Web API",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "author": "Spotify Playlist Discovery System",
+  "license": "MIT",
+  "dependencies": {
+    "apify": "^3.1.0",
+    "crawlee": "^3.5.0",
+    "puppeteer": "^21.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/spotify-playlist-discovery/apify-actor"
+  },
+  "keywords": [
+    "spotify",
+    "playlist",
+    "scraper",
+    "music",
+    "apify",
+    "puppeteer"
+  ]
+}

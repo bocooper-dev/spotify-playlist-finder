@@ -1,0 +1,551 @@
+{
+  "name": "Global Error Handling & Retry Logic",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "error-handler",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Error Handler Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "global-error-handler",
+      "id": "error-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Global error classification and handling logic\nconst errorData = $input.first().json.body;\nconst { error, context, timestamp, workflowId, nodeId } = errorData;\n\n// Error classification system\nfunction classifyError(error) {\n  const errorMessage = error.message || error.toString();\n  const errorCode = error.code || 'UNKNOWN';\n  \n  // Rate limiting errors\n  if (errorMessage.includes('rate limit') || errorMessage.includes('429') || errorCode === 'RATE_LIMITED') {\n    return {\n      type: 'RATE_LIMITED',\n      severity: 'medium',\n      retryable: true,\n      retryDelay: 60000, // 1 minute\n      maxRetries: 5\n    };\n  }\n  \n  // Network/connectivity errors\n  if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ETIMEDOUT') || \n      errorMessage.includes('network') || errorCode === 'NETWORK_ERROR') {\n    return {\n      type: 'NETWORK_ERROR',\n      severity: 'medium',\n      retryable: true,\n      retryDelay: 5000, // 5 seconds\n      maxRetries: 3\n    };\n  }\n  \n  // Authentication errors\n  if (errorMessage.includes('unauthorized') || errorMessage.includes('401') || \n      errorMessage.includes('invalid token') || errorCode === 'AUTH_ERROR') {\n    return {\n      type: 'AUTH_ERROR',\n      severity: 'high',\n      retryable: true,\n      retryDelay: 0, // Immediate retry after token refresh\n      maxRetries: 2\n    };\n  }\n  \n  // Spotify API specific errors\n  if (errorMessage.includes('spotify') && errorMessage.includes('400')) {\n    return {\n      type: 'SPOTIFY_BAD_REQUEST',\n      severity: 'low',\n      retryable: false,\n      retryDelay: 0,\n      maxRetries: 0\n    };\n  }\n  \n  // Apify actor errors\n  if (errorMessage.includes('apify') || errorMessage.includes('actor')) {\n    return {\n      type: 'APIFY_ERROR',\n      severity: 'medium',\n      retryable: true,\n      retryDelay: 30000, // 30 seconds\n      maxRetries: 3\n    };\n  }\n  \n  // Redis/caching errors\n  if (errorMessage.includes('redis') || errorMessage.includes('cache')) {\n    return {\n      type: 'CACHE_ERROR',\n      severity: 'low',\n      retryable: true,\n      retryDelay: 1000, // 1 second\n      maxRetries: 2\n    };\n  }\n  \n  // Validation errors\n  if (errorMessage.includes('validation') || errorMessage.includes('invalid')) {\n    return {\n      type: 'VALIDATION_ERROR',\n      severity: 'low',\n      retryable: false,\n      retryDelay: 0,\n      maxRetries: 0\n    };\n  }\n  \n  // Default unknown error\n  return {\n    type: 'UNKNOWN_ERROR',\n    severity: 'high',\n    retryable: false,\n    retryDelay: 0,\n    maxRetries: 0\n  };\n}\n\n// Classify the current error\nconst errorClassification = classifyError(error);\n\n// Generate unique error ID for tracking\nconst errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\n\n// Calculate retry attempt number\nconst retryAttempt = context.retryAttempt || 0;\nconst shouldRetry = errorClassification.retryable && retryAttempt < errorClassification.maxRetries;\n\n// Enhanced error context\nconst errorContext = {\n  errorId,\n  originalError: {\n    message: error.message,\n    code: error.code,\n    stack: error.stack\n  },\n  classification: errorClassification,\n  workflow: {\n    id: workflowId,\n    nodeId: nodeId,\n    executionId: context.executionId\n  },\n  retry: {\n    attempt: retryAttempt,\n    shouldRetry,\n    nextRetryAt: shouldRetry ? new Date(Date.now() + errorClassification.retryDelay).toISOString() : null\n  },\n  timestamp: timestamp || new Date().toISOString(),\n  environment: $env.NODE_ENV || 'development'\n};\n\nreturn [{\n  json: errorContext\n}];"
+      },
+      "name": "Classify Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "id": "classify-error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.retry.shouldRetry}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "Should Retry Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "id": "retry-check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.classification.type}}",
+              "rightValue": "AUTH_ERROR",
+              "operator": {
+                "type": "string",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "Is Auth Error Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 200],
+      "id": "auth-error-check"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.N8N_WEBHOOK_URL}}/spotify-token",
+        "authentication": "headerAuth",
+        "requestMethod": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "forceRefresh",
+              "value": "true"
+            },
+            {
+              "name": "reason",
+              "value": "authentication_error_recovery"
+            }
+          ]
+        }
+      },
+      "name": "Force Token Refresh",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1120, 120],
+      "id": "force-token-refresh"
+    },
+    {
+      "parameters": {
+        "amount": "={{$json.classification.retryDelay}}",
+        "unit": "ms"
+      },
+      "name": "Retry Delay",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1120, 200],
+      "id": "retry-delay"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.workflow.originalWebhookUrl || $env.N8N_BASE_URL + '/webhook/' + $json.workflow.id}}",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Retry-Attempt",
+              "value": "={{$json.retry.attempt + 1}}"
+            },
+            {
+              "name": "X-Error-Recovery",
+              "value": "true"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "originalPayload",
+              "value": "={{JSON.stringify($json.workflow.originalPayload)}}"
+            },
+            {
+              "name": "retryContext",
+              "value": "={{JSON.stringify({ errorId: $json.errorId, attempt: $json.retry.attempt + 1 })}}"
+            }
+          ]
+        }
+      },
+      "name": "Retry Original Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1340, 200],
+      "id": "retry-request"
+    },
+    {
+      "parameters": {
+        "key": "error_{{$json.errorId}}",
+        "value": "={{JSON.stringify($json)}}",
+        "ttl": 3600
+      },
+      "name": "Log Error to Cache",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [900, 400],
+      "id": "log-error"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.classification.severity}}",
+              "rightValue": "high",
+              "operator": {
+                "type": "string",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "Is Critical Error",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 400],
+      "id": "critical-check"
+    },
+    {
+      "parameters": {
+        "message": "🚨 Critical N8N Workflow Error: {{$json.classification.type}}\\n\\nWorkflow: {{$json.workflow.id}} ({{$json.workflow.nodeId}})\\nError ID: {{$json.errorId}}\\nMessage: {{$json.originalError.message}}\\n\\nRetry Status: {{$json.retry.shouldRetry ? 'Will retry' : 'No retry'}}",
+        "additionalFields": {
+          "level": "error",
+          "attachments": [
+            {
+              "color": "#ff0000",
+              "title": "Error Details",
+              "text": "Type: {{$json.classification.type}}\\nSeverity: {{$json.classification.severity}}\\nRetryable: {{$json.classification.retryable}}\\nAttempt: {{$json.retry.attempt}}/{{$json.classification.maxRetries}}"
+            }
+          ]
+        }
+      },
+      "name": "Send Critical Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1340, 320],
+      "id": "critical-alert"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.NUXT_PUBLIC_APP_URL}}/api/webhooks/n8n",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event",
+              "value": "workflow_error_occurred"
+            },
+            {
+              "name": "errorId",
+              "value": "={{$json.errorId}}"
+            },
+            {
+              "name": "errorType",
+              "value": "={{$json.classification.type}}"
+            },
+            {
+              "name": "severity",
+              "value": "={{$json.classification.severity}}"
+            },
+            {
+              "name": "workflowId",
+              "value": "={{$json.workflow.id}}"
+            },
+            {
+              "name": "retryable",
+              "value": "={{$json.classification.retryable}}"
+            }
+          ]
+        }
+      },
+      "name": "Notify App of Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1340, 400],
+      "id": "notify-app-error"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": {
+          "success": false,
+          "errorId": "={{$json.errorId}}",
+          "error": {
+            "type": "={{$json.classification.type}}",
+            "message": "={{$json.originalError.message}}",
+            "severity": "={{$json.classification.severity}}"
+          },
+          "retry": {
+            "attempted": "={{$json.retry.shouldRetry}}",
+            "nextAttempt": "={{$json.retry.nextRetryAt}}",
+            "maxRetries": "={{$json.classification.maxRetries}}"
+          },
+          "timestamp": "={{$json.timestamp}}"
+        }
+      },
+      "name": "Return Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 480],
+      "id": "error-response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Circuit breaker implementation\nconst redis = require('redis');\nconst errorType = $json.classification.type;\nconst workflowId = $json.workflow.id;\n\n// Circuit breaker key for this error type and workflow\nconst circuitBreakerKey = `circuit_breaker_${workflowId}_${errorType}`;\n\n// Get current failure count\nlet failureCount = 0;\ntry {\n  const cached = await $json.redis?.get(circuitBreakerKey);\n  if (cached) {\n    const data = JSON.parse(cached);\n    failureCount = data.failureCount || 0;\n  }\n} catch (e) {\n  console.log('Circuit breaker cache read failed:', e.message);\n}\n\n// Increment failure count\nfailureCount++;\n\n// Circuit breaker thresholds\nconst FAILURE_THRESHOLD = {\n  'RATE_LIMITED': 10,\n  'NETWORK_ERROR': 5,\n  'AUTH_ERROR': 3,\n  'APIFY_ERROR': 5,\n  'UNKNOWN_ERROR': 3\n};\n\nconst threshold = FAILURE_THRESHOLD[errorType] || 3;\nconst isCircuitOpen = failureCount >= threshold;\n\n// Calculate circuit breaker timeout (exponential backoff)\nconst baseTimeout = 300000; // 5 minutes\nconst circuitTimeout = baseTimeout * Math.pow(2, Math.min(failureCount - threshold, 5));\n\n// Update circuit breaker state\nconst circuitBreakerData = {\n  failureCount,\n  threshold,\n  isOpen: isCircuitOpen,\n  openedAt: isCircuitOpen ? new Date().toISOString() : null,\n  timeout: circuitTimeout,\n  lastFailure: new Date().toISOString()\n};\n\n// Store circuit breaker state (would need actual Redis implementation)\ntry {\n  // await redis.setex(circuitBreakerKey, Math.ceil(circuitTimeout / 1000), JSON.stringify(circuitBreakerData));\n  console.log(`Circuit breaker state updated for ${circuitBreakerKey}:`, circuitBreakerData);\n} catch (e) {\n  console.log('Circuit breaker cache write failed:', e.message);\n}\n\nreturn [{\n  json: {\n    ...$.json,\n    circuitBreaker: circuitBreakerData\n  }\n}];"
+      },
+      "name": "Update Circuit Breaker",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 520],
+      "id": "circuit-breaker"
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyMinute",
+              "minute": 5
+            }
+          ]
+        }
+      },
+      "name": "Error Metrics Collection",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 700],
+      "id": "metrics-cron"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect and analyze error metrics\nconst redis = require('redis');\nconst now = new Date();\nconst last5Minutes = new Date(now.getTime() - 5 * 60 * 1000);\n\n// Get all error keys from the last 5 minutes\nconst errorKeys = []; // Would get from Redis: await redis.keys('error_*');\n\nconst metrics = {\n  totalErrors: 0,\n  errorsByType: {},\n  errorsBySeverity: {},\n  errorsByWorkflow: {},\n  retrySuccessRate: 0,\n  circuitBreakersOpen: 0,\n  timestamp: now.toISOString()\n};\n\n// Analyze each error (simulated data structure)\nfor (const errorKey of errorKeys) {\n  try {\n    // const errorData = JSON.parse(await redis.get(errorKey));\n    const errorData = { /* simulated error data */ };\n    \n    if (new Date(errorData.timestamp) >= last5Minutes) {\n      metrics.totalErrors++;\n      \n      // Count by type\n      const type = errorData.classification.type;\n      metrics.errorsByType[type] = (metrics.errorsByType[type] || 0) + 1;\n      \n      // Count by severity\n      const severity = errorData.classification.severity;\n      metrics.errorsBySeverity[severity] = (metrics.errorsBySeverity[severity] || 0) + 1;\n      \n      // Count by workflow\n      const workflowId = errorData.workflow.id;\n      metrics.errorsByWorkflow[workflowId] = (metrics.errorsByWorkflow[workflowId] || 0) + 1;\n    }\n  } catch (e) {\n    console.log('Error processing error metrics:', e.message);\n  }\n}\n\n// Check circuit breakers\n// const circuitKeys = await redis.keys('circuit_breaker_*');\nconst circuitKeys = []; // Simulated\nfor (const circuitKey of circuitKeys) {\n  try {\n    // const circuitData = JSON.parse(await redis.get(circuitKey));\n    const circuitData = { isOpen: false }; // Simulated\n    if (circuitData.isOpen) {\n      metrics.circuitBreakersOpen++;\n    }\n  } catch (e) {\n    console.log('Error checking circuit breaker:', e.message);\n  }\n}\n\n// Calculate alerts\nconst alerts = [];\nif (metrics.totalErrors > 20) {\n  alerts.push({\n    type: 'HIGH_ERROR_RATE',\n    message: `High error rate: ${metrics.totalErrors} errors in 5 minutes`,\n    severity: 'high'\n  });\n}\n\nif (metrics.circuitBreakersOpen > 0) {\n  alerts.push({\n    type: 'CIRCUIT_BREAKERS_OPEN',\n    message: `${metrics.circuitBreakersOpen} circuit breakers are open`,\n    severity: 'medium'\n  });\n}\n\n// Check for error concentration\nfor (const [type, count] of Object.entries(metrics.errorsByType)) {\n  if (count > 10) {\n    alerts.push({\n      type: 'ERROR_CONCENTRATION',\n      message: `High concentration of ${type} errors: ${count}`,\n      severity: 'medium'\n    });\n  }\n}\n\nreturn [{\n  json: {\n    metrics,\n    alerts,\n    collectedAt: now.toISOString()\n  }\n}];"
+      },
+      "name": "Collect Error Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 700],
+      "id": "collect-metrics"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.alerts.length}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "Has Alerts Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 700],
+      "id": "alerts-check"
+    },
+    {
+      "parameters": {
+        "message": "📊 N8N Error Metrics Alert\\n\\nTotal Errors (5min): {{$json.metrics.totalErrors}}\\nCircuit Breakers Open: {{$json.metrics.circuitBreakersOpen}}\\n\\nAlerts:\\n{{$json.alerts.map(a => `• ${a.type}: ${a.message}`).join('\\n')}}",
+        "additionalFields": {
+          "level": "warning"
+        }
+      },
+      "name": "Send Metrics Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [900, 620],
+      "id": "metrics-alert"
+    },
+    {
+      "parameters": {
+        "key": "error_metrics_{{$json.collectedAt}}",
+        "value": "={{JSON.stringify($json.metrics)}}",
+        "ttl": 86400
+      },
+      "name": "Store Metrics",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [900, 700],
+      "id": "store-metrics"
+    }
+  ],
+  "connections": {
+    "Error Handler Webhook": {
+      "main": [
+        [
+          {
+            "node": "Classify Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Error": {
+      "main": [
+        [
+          {
+            "node": "Should Retry Check",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Error to Cache",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update Circuit Breaker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Retry Check": {
+      "main": [
+        [
+          {
+            "node": "Is Auth Error Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Auth Error Check": {
+      "main": [
+        [
+          {
+            "node": "Force Token Refresh",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retry Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Force Token Refresh": {
+      "main": [
+        [
+          {
+            "node": "Retry Original Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry Delay": {
+      "main": [
+        [
+          {
+            "node": "Retry Original Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error to Cache": {
+      "main": [
+        [
+          {
+            "node": "Is Critical Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Critical Error": {
+      "main": [
+        [
+          {
+            "node": "Send Critical Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify App of Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Metrics Collection": {
+      "main": [
+        [
+          {
+            "node": "Collect Error Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Error Metrics": {
+      "main": [
+        [
+          {
+            "node": "Has Alerts Check",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Store Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Alerts Check": {
+      "main": [
+        [
+          {
+            "node": "Send Metrics Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "error-handling-workflow"
+  },
+  "id": "error-handling-workflow",
+  "tags": [
+    {
+      "createdAt": "2025-09-10T12:00:00.000Z",
+      "updatedAt": "2025-09-10T12:00:00.000Z",
+      "id": "error-handling",
+      "name": "error-handling"
+    },
+    {
+      "createdAt": "2025-09-10T12:00:00.000Z",
+      "updatedAt": "2025-09-10T12:00:00.000Z",
+      "id": "monitoring",
+      "name": "monitoring"
+    }
+  ]
+}
