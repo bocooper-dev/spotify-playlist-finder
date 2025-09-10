@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(scripts/create-new-feature.sh:*)"
+      "Bash(scripts/create-new-feature.sh:*)",
+      "Bash(scripts/check-task-prerequisites.sh:*)"
     ],
     "deny": [],
     "ask": []
