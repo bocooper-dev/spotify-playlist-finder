@@ -1,0 +1,490 @@
+{
+  "name": "Spotify Playlist Enhancement via Apify",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "enhance-playlists",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Playlist Enhancement Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "playlist-enhancement-request",
+      "id": "enhancement-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and validate playlist IDs from request\nconst requestBody = $input.first().json.body;\nconst playlistIds = requestBody.playlistIds || [];\nconst options = requestBody.options || {};\n\n// Validate input\nif (!Array.isArray(playlistIds) || playlistIds.length === 0) {\n  throw new Error('playlistIds array is required and must not be empty');\n}\n\nif (playlistIds.length > 50) {\n  throw new Error('Maximum 50 playlist IDs allowed per request');\n}\n\n// Validate playlist ID format (Spotify playlist IDs are 22 characters)\nconst invalidIds = playlistIds.filter(id => !/^[0-9A-Za-z]{22}$/.test(id));\nif (invalidIds.length > 0) {\n  throw new Error(`Invalid playlist IDs: ${invalidIds.join(', ')}`);\n}\n\n// Prepare Apify actor input\nconst apifyInput = {\n  playlistIds: playlistIds,\n  maxConcurrency: options.maxConcurrency || 3,\n  requestDelay: options.requestDelay || 2000,\n  retryCount: options.retryCount || 3,\n  proxy: {\n    useApifyProxy: true,\n    apifyProxyCountry: options.proxyCountry || 'US'\n  },\n  includeOwnerProfile: options.includeOwnerProfile !== false,\n  includeTrackSample: options.includeTrackSample !== false,\n  trackSampleSize: options.trackSampleSize || 10\n};\n\nreturn [{\n  json: {\n    apifyInput,\n    requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n    timestamp: new Date().toISOString(),\n    playlistCount: playlistIds.length\n  }\n}];"
+      },
+      "name": "Prepare Apify Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "id": "prepare-input"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.N8N_WEBHOOK_URL}}/spotify-token",
+        "authentication": "headerAuth",
+        "requestMethod": "GET"
+      },
+      "name": "Get Spotify Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 200],
+      "id": "get-token"
+    },
+    {
+      "parameters": {
+        "resource": "actor",
+        "operation": "run",
+        "actorId": "={{$env.APIFY_SPOTIFY_ACTOR_ID}}",
+        "input": "={{JSON.stringify($json.apifyInput)}}",
+        "timeout": 300000,
+        "waitForFinish": true
+      },
+      "name": "Run Spotify Scraper Actor",
+      "type": "n8n-nodes-base.apify",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "id": "run-apify-actor",
+      "credentials": {
+        "apifyApi": {
+          "id": "apify-credentials",
+          "name": "Apify API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.status}}",
+              "rightValue": "SUCCEEDED",
+              "operator": {
+                "type": "string",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "Actor Success Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "id": "success-check"
+    },
+    {
+      "parameters": {
+        "resource": "dataset",
+        "operation": "getItems",
+        "datasetId": "={{$json.defaultDatasetId}}",
+        "format": "json",
+        "limit": 1000
+      },
+      "name": "Get Scraped Data",
+      "type": "n8n-nodes-base.apify",
+      "typeVersion": 1,
+      "position": [1120, 200],
+      "id": "get-scraped-data",
+      "credentials": {
+        "apifyApi": {
+          "id": "apify-credentials",
+          "name": "Apify API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and validate scraped playlist data\nconst scrapedItems = $input.first().json.items || [];\nconst originalRequest = $input.all()[1].json;\n\nconst processedPlaylists = [];\nconst errors = [];\nconst warnings = [];\n\n// Process each scraped playlist\nfor (const item of scrapedItems) {\n  try {\n    if (item.scrapeStatus === 'success') {\n      // Transform scraped data to match our schema\n      const processedPlaylist = {\n        id: item.playlistId,\n        scrapedData: {\n          title: item.title,\n          description: item.description,\n          coverImageUrl: item.coverImage,\n          followerCount: item.followerCount || 0,\n          trackCount: item.trackCount || 0,\n          duration: item.duration,\n          isPublic: item.isPublic,\n          lastUpdated: item.lastUpdated,\n          \n          // Enhanced owner information\n          owner: {\n            name: item.ownerName,\n            profileLink: item.ownerLink,\n            profile: item.ownerProfile ? {\n              displayName: item.ownerProfile.displayName,\n              followerCount: parseFollowerCount(item.ownerProfile.followerCount),\n              profileImageUrl: item.ownerProfile.profileImage,\n              playlistCount: parsePlaylistCount(item.ownerProfile.playlistCount),\n              isVerified: item.ownerProfile.isVerified || false\n            } : null\n          },\n          \n          // Track sample for genre analysis\n          trackSample: item.tracks || [],\n          \n          // Metadata\n          scrapedAt: item.scrapedAt,\n          sourceUrl: item.url\n        }\n      };\n      \n      processedPlaylists.push(processedPlaylist);\n    } else {\n      // Handle failed scrapes\n      errors.push({\n        playlistId: item.playlistId,\n        error: item.errorMessage || 'Unknown scraping error',\n        status: item.scrapeStatus\n      });\n    }\n  } catch (processError) {\n    errors.push({\n      playlistId: item.playlistId || 'unknown',\n      error: `Processing error: ${processError.message}`,\n      status: 'processing_failed'\n    });\n  }\n}\n\n// Helper function to parse follower count strings\nfunction parseFollowerCount(followerText) {\n  if (!followerText) return 0;\n  \n  const match = followerText.match(/([\\d,]+)/);\n  if (match) {\n    return parseInt(match[1].replace(/,/g, ''));\n  }\n  return 0;\n}\n\n// Helper function to parse playlist count strings  \nfunction parsePlaylistCount(playlistText) {\n  if (!playlistText) return 0;\n  \n  const match = playlistText.match(/([\\d,]+)/);\n  if (match) {\n    return parseInt(match[1].replace(/,/g, ''));\n  }\n  return 0;\n}\n\n// Add warnings for common issues\nif (errors.length > 0) {\n  warnings.push(`${errors.length} playlists failed to scrape`);\n}\n\nif (processedPlaylists.length === 0 && scrapedItems.length > 0) {\n  warnings.push('No playlists were successfully processed');\n}\n\n// Calculate success metrics\nconst successRate = scrapedItems.length > 0 ? \n  (processedPlaylists.length / scrapedItems.length * 100).toFixed(1) : 0;\n\nreturn [{\n  json: {\n    requestId: originalRequest.requestId,\n    enhancedPlaylists: processedPlaylists,\n    processingMetadata: {\n      totalRequested: originalRequest.playlistCount,\n      totalScraped: scrapedItems.length,\n      successfullyProcessed: processedPlaylists.length,\n      errors: errors,\n      warnings: warnings,\n      successRate: parseFloat(successRate),\n      processingTime: Date.now() - new Date(originalRequest.timestamp).getTime(),\n      processedAt: new Date().toISOString()\n    }\n  }\n}];"
+      },
+      "name": "Process Scraped Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 200],
+      "id": "process-data"
+    },
+    {
+      "parameters": {
+        "key": "spotify_enhanced_playlists_{{$json.requestId}}",
+        "value": "={{JSON.stringify($json.enhancedPlaylists)}}",
+        "ttl": 1800
+      },
+      "name": "Cache Enhanced Data",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1560, 120],
+      "id": "cache-enhanced"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": {
+          "success": true,
+          "requestId": "={{$json.requestId}}",
+          "enhancedPlaylists": "={{$json.enhancedPlaylists}}",
+          "metadata": "={{$json.processingMetadata}}",
+          "message": "Playlists enhanced successfully"
+        }
+      },
+      "name": "Return Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 200],
+      "id": "success-response"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.NUXT_PUBLIC_APP_URL}}/api/webhooks/n8n",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event",
+              "value": "playlist_enhancement_completed"
+            },
+            {
+              "name": "requestId",
+              "value": "={{$json.requestId}}"
+            },
+            {
+              "name": "successCount",
+              "value": "={{$json.processingMetadata.successfullyProcessed}}"
+            },
+            {
+              "name": "errorCount",
+              "value": "={{$json.processingMetadata.errors.length}}"
+            }
+          ]
+        }
+      },
+      "name": "Notify App of Completion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1560, 320],
+      "id": "notify-completion"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle Apify actor failure\nconst actorResult = $input.first().json;\nconst originalRequest = $input.all()[1].json;\n\nconst errorDetails = {\n  requestId: originalRequest.requestId,\n  actorStatus: actorResult.status,\n  actorId: actorResult.actId,\n  runId: actorResult.id,\n  startedAt: actorResult.startedAt,\n  finishedAt: actorResult.finishedAt,\n  exitCode: actorResult.exitCode,\n  statusMessage: actorResult.statusMessage,\n  // Try to extract error from log if available\n  errorMessage: actorResult.buildLog ? \n    extractErrorFromLog(actorResult.buildLog) : \n    'Actor execution failed - check Apify console for details'\n};\n\nfunction extractErrorFromLog(log) {\n  // Look for common error patterns in build log\n  const errorPatterns = [\n    /Error: (.+)/,\n    /ERROR (.+)/,\n    /FATAL (.+)/,\n    /Exception: (.+)/\n  ];\n  \n  for (const pattern of errorPatterns) {\n    const match = log.match(pattern);\n    if (match) {\n      return match[1];\n    }\n  }\n  \n  return 'Unknown actor error';\n}\n\nreturn [{\n  json: {\n    ...errorDetails,\n    failedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Process Actor Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 400],
+      "id": "process-failure"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 500,
+        "responseBody": {
+          "success": false,
+          "requestId": "={{$json.requestId}}",
+          "error": {
+            "code": "APIFY_ACTOR_FAILED",
+            "message": "Playlist enhancement failed",
+            "details": {
+              "actorStatus": "={{$json.actorStatus}}",
+              "errorMessage": "={{$json.errorMessage}}",
+              "runId": "={{$json.runId}}"
+            }
+          },
+          "retryable": true
+        }
+      },
+      "name": "Return Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 400],
+      "id": "error-response"
+    },
+    {
+      "parameters": {
+        "message": "Apify playlist enhancement failed: {{$json.errorMessage}} (Request: {{$json.requestId}})",
+        "additionalFields": {
+          "level": "error",
+          "attachments": [
+            {
+              "color": "#ff0000",
+              "title": "Actor Failure Details",
+              "text": "Status: {{$json.actorStatus}}\\nRun ID: {{$json.runId}}\\nError: {{$json.errorMessage}}"
+            }
+          ]
+        }
+      },
+      "name": "Log Enhancement Error",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1340, 520],
+      "id": "log-error"
+    },
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyHour",
+              "hour": 2
+            }
+          ]
+        }
+      },
+      "name": "Daily Actor Maintenance",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 600],
+      "id": "maintenance-cron"
+    },
+    {
+      "parameters": {
+        "resource": "actor",
+        "operation": "get",
+        "actorId": "={{$env.APIFY_SPOTIFY_ACTOR_ID}}"
+      },
+      "name": "Check Actor Status",
+      "type": "n8n-nodes-base.apify",
+      "typeVersion": 1,
+      "position": [460, 600],
+      "id": "check-actor"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeVersion": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.isPublic}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "name": "Actor Available Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 600],
+      "id": "actor-available"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.NUXT_PUBLIC_APP_URL}}/api/webhooks/n8n",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event",
+              "value": "apify_actor_maintenance_alert"
+            },
+            {
+              "name": "actorId",
+              "value": "={{$env.APIFY_SPOTIFY_ACTOR_ID}}"
+            },
+            {
+              "name": "status", 
+              "value": "unavailable"
+            },
+            {
+              "name": "message",
+              "value": "Spotify scraper actor is not publicly available"
+            }
+          ]
+        }
+      },
+      "name": "Alert Actor Unavailable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 700],
+      "id": "alert-unavailable"
+    }
+  ],
+  "connections": {
+    "Playlist Enhancement Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Apify Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Apify Input": {
+      "main": [
+        [
+          {
+            "node": "Get Spotify Token",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Run Spotify Scraper Actor", 
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Spotify Scraper Actor": {
+      "main": [
+        [
+          {
+            "node": "Actor Success Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actor Success Check": {
+      "main": [
+        [
+          {
+            "node": "Get Scraped Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Actor Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Scraped Data": {
+      "main": [
+        [
+          {
+            "node": "Process Scraped Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Scraped Data": {
+      "main": [
+        [
+          {
+            "node": "Cache Enhanced Data",
+            "type": "main", 
+            "index": 0
+          },
+          {
+            "node": "Return Success Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify App of Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Actor Failure": {
+      "main": [
+        [
+          {
+            "node": "Return Error Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Enhancement Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Actor Maintenance": {
+      "main": [
+        [
+          {
+            "node": "Check Actor Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Actor Status": {
+      "main": [
+        [
+          {
+            "node": "Actor Available Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actor Available Check": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Alert Actor Unavailable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "apify-integration-workflow"
+  },
+  "id": "apify-integration-workflow",
+  "tags": [
+    {
+      "createdAt": "2025-09-10T12:00:00.000Z",
+      "updatedAt": "2025-09-10T12:00:00.000Z",
+      "id": "spotify",
+      "name": "spotify"
+    },
+    {
+      "createdAt": "2025-09-10T12:00:00.000Z",
+      "updatedAt": "2025-09-10T12:00:00.000Z", 
+      "id": "apify",
+      "name": "apify"
+    },
+    {
+      "createdAt": "2025-09-10T12:00:00.000Z",
+      "updatedAt": "2025-09-10T12:00:00.000Z",
+      "id": "enhancement",
+      "name": "enhancement"
+    }
+  ]
+}
