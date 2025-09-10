@@ -1,6 +1,6 @@
 # Feature Specification: Spotify Playlist Discovery System
 
-**Feature Branch**: `002-build-an-ai`  
+**Feature Branch**: `001-build-an-ai`  
 **Created**: 2025-09-10  
 **Status**: Draft  
 **Input**: User description: "Build an AI application that can find popular Spotify playlists in a given set of music genres and return 50 playlists with the playlist URL and playlist owner contact information."

@@ -1,7 +1,7 @@
 # Implementation Plan: Spotify Playlist Discovery System
 
-**Branch**: `002-build-an-ai` | **Date**: 2025-09-10 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/002-build-an-ai/spec.md`
+**Branch**: `001-build-an-ai` | **Date**: 2025-09-10 | **Spec**: [spec.md](./spec.md)
+**Input**: Feature specification from `/specs/001-build-an-ai/spec.md`
 
 ## Execution Flow (/plan command scope)
 ```
