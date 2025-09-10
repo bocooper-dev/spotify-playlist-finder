@@ -1,9 +1,9 @@
 /**
  * Spotify API Client Library
- * 
+ *
  * Provides a comprehensive interface to the Spotify Web API with built-in
  * rate limiting, error handling, caching, and N8N workflow integration.
- * 
+ *
  * Features:
  * - OAuth 2.0 Client Credentials Flow
  * - Automatic token management via N8N workflows
@@ -13,13 +13,12 @@
  * - Type-safe API responses
  */
 
-import type { 
-  Playlist, 
-  PlaylistOwner, 
-  SearchRequest, 
-  SearchResult, 
-  SearchMetadata,
-  Genre 
+import type {
+  Genre,
+  Playlist,
+  PlaylistOwner,
+  SearchRequest,
+  SearchResult
 } from '~/types'
 
 export interface SpotifyClientConfig {
@@ -96,10 +95,10 @@ export class SpotifyClient {
   async searchPlaylists(request: SearchRequest): Promise<SearchResult> {
     const startTime = Date.now()
     const requestId = `search_${startTime}_${Math.random().toString(36).substr(2, 9)}`
-    
+
     // Validate request
     await this.validateSearchRequest(request)
-    
+
     // Check cache first
     const cacheKey = this.generateCacheKey('search', request)
     const cached = await this.cache.get<SearchResult>(cacheKey)
@@ -130,11 +129,11 @@ export class SpotifyClient {
 
       // Execute search with rate limiting
       const searchResults = await this.executePlaylistSearch(request, requestId)
-      
+
       // Enhance with additional data if needed
-      const enhancedResults = request.enhanceWithScraping ? 
-        await this.enhancePlaylistsWithScraping(searchResults.playlists) : 
-        searchResults.playlists
+      const enhancedResults = request.enhanceWithScraping
+        ? await this.enhancePlaylistsWithScraping(searchResults.playlists)
+        : searchResults.playlists
 
       // Build final result
       const result: SearchResult = {
@@ -155,12 +154,11 @@ export class SpotifyClient {
       await this.cache.set(cacheKey, result, this.config.cache.responseTtl)
 
       return result
-
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof SpotifyApiError) {
         throw error
       }
-      
+
       throw new SpotifyApiError(
         'Playlist search failed',
         {
@@ -177,7 +175,7 @@ export class SpotifyClient {
    */
   async getPlaylist(playlistId: string): Promise<Playlist> {
     await this.validatePlaylistId(playlistId)
-    
+
     const cacheKey = this.generateCacheKey('playlist', { id: playlistId })
     const cached = await this.cache.get<Playlist>(cacheKey)
     if (cached) return cached
@@ -194,8 +192,7 @@ export class SpotifyClient {
       await this.cache.set(cacheKey, playlist, this.config.cache.responseTtl)
 
       return playlist
-
-    } catch (error: any) {
+    } catch (error) {
       throw this.handleApiError(error, 'Failed to fetch playlist')
     }
   }
@@ -213,7 +210,7 @@ export class SpotifyClient {
 
     try {
       const response = await this.makeApiRequest('/recommendations/available-genre-seeds')
-      
+
       const genres: Genre[] = response.data.genres.map((genre: string) => ({
         name: genre,
         displayName: this.formatGenreName(genre),
@@ -222,10 +219,9 @@ export class SpotifyClient {
 
       // Cache for 6 hours
       await this.cache.set(cacheKey, genres, 21600)
-      
-      return genres
 
-    } catch (error: any) {
+      return genres
+    } catch (error) {
       throw this.handleApiError(error, 'Failed to fetch available genres')
     }
   }
@@ -245,16 +241,16 @@ export class SpotifyClient {
       })
 
       return response
-    } catch (error: any) {
+    } catch (error) {
       console.warn('Genre validation via N8N failed, using local validation:', error.message)
-      
+
       // Fallback to local validation
       const availableGenres = await this.getAvailableGenres()
       const availableGenreNames = availableGenres.map(g => g.name)
-      
+
       const validGenres = genres.filter(g => availableGenreNames.includes(g.toLowerCase()))
       const invalidGenres = genres.filter(g => !availableGenreNames.includes(g.toLowerCase()))
-      
+
       return {
         validGenres,
         invalidGenres: invalidGenres.map(g => ({ requested: g, suggestions: [] })),
@@ -271,19 +267,19 @@ export class SpotifyClient {
     const playlists: Playlist[] = []
     const warnings: string[] = []
     let apiCallsCount = 0
-    
+
     // Build search query
     const genreQueries = request.genres.map(genre => `genre:"${genre}"`).join(' OR ')
     const searchQuery = `(${genreQueries}) type:playlist`
-    
+
     let offset = 0
     const limit = 50
     const maxResults = 1000 // Spotify limit
-    
+
     while (playlists.length < maxResults && offset < maxResults) {
       await this.ensureValidToken()
       await this.rateLimiter.waitForSlot()
-      
+
       try {
         const response = await this.makeApiRequest('/search', {
           q: searchQuery,
@@ -292,12 +288,12 @@ export class SpotifyClient {
           offset: offset,
           market: request.market || 'US'
         })
-        
+
         apiCallsCount++
-        
+
         const items = response.data.playlists?.items || []
         if (items.length === 0) break
-        
+
         // Process and filter playlists
         for (const item of items) {
           try {
@@ -305,20 +301,19 @@ export class SpotifyClient {
             if (playlist) {
               playlists.push(playlist)
             }
-          } catch (error: any) {
+          } catch (error) {
             warnings.push(`Failed to process playlist ${item.id}: ${error.message}`)
           }
         }
-        
+
         // If we got fewer than requested, we've reached the end
         if (items.length < limit) break
-        
+
         offset += limit
-        
+
         // Rate limiting protection
         await new Promise(resolve => setTimeout(resolve, 100))
-        
-      } catch (error: any) {
+      } catch (error) {
         if (error.details?.status === 429) {
           // Rate limited, wait and retry
           const retryAfter = error.details.retryAfter || 1000
@@ -328,7 +323,7 @@ export class SpotifyClient {
         throw error
       }
     }
-    
+
     return {
       playlists,
       apiCallsCount,
@@ -339,16 +334,16 @@ export class SpotifyClient {
   /**
    * Transform Spotify API playlist response to our Playlist type
    */
-  private async transformAndValidatePlaylist(item: any, request: SearchRequest): Promise<Playlist | null> {
+  private async transformAndValidatePlaylist(item: unknown, request: SearchRequest): Promise<Playlist | null> {
     // Apply filters
     if (request.minFollowers && (item.followers?.total || 0) < request.minFollowers) {
       return null
     }
-    
+
     if (request.maxFollowers && (item.followers?.total || 0) > request.maxFollowers) {
       return null
     }
-    
+
     // Get detailed playlist info if needed
     let detailedPlaylist = item
     if (!item.tracks || !item.owner?.followers) {
@@ -358,14 +353,14 @@ export class SpotifyClient {
         console.warn(`Failed to get detailed info for playlist ${item.id}:`, error)
       }
     }
-    
+
     return this.transformPlaylistResponse(detailedPlaylist)
   }
 
   /**
    * Transform Spotify playlist data to our Playlist interface
    */
-  private transformPlaylistResponse(data: any): Playlist {
+  private transformPlaylistResponse(data: unknown): Playlist {
     const owner: PlaylistOwner = {
       id: data.owner.id,
       displayName: data.owner.display_name || 'Unknown',
@@ -401,9 +396,9 @@ export class SpotifyClient {
   /**
    * Extract genres from playlist data (heuristic approach)
    */
-  private extractGenresFromPlaylist(data: any): string[] {
+  private extractGenresFromPlaylist(data: unknown): string[] {
     const genres: string[] = []
-    
+
     // Extract from description
     if (data.description) {
       const description = data.description.toLowerCase()
@@ -414,7 +409,7 @@ export class SpotifyClient {
         }
       }
     }
-    
+
     // Extract from name
     if (data.name) {
       const name = data.name.toLowerCase()
@@ -425,21 +420,21 @@ export class SpotifyClient {
         }
       }
     }
-    
+
     return [...new Set(genres)] // Remove duplicates
   }
 
   /**
    * Calculate popularity score based on multiple factors
    */
-  private calculatePopularityScore(data: any): number {
+  private calculatePopularityScore(data: unknown): number {
     const followers = data.followers?.total || 0
     const tracks = data.tracks?.total || 0
-    
+
     // Logarithmic scale for followers + track count factor
     const followerScore = followers > 0 ? Math.log10(followers + 1) * 20 : 0
     const trackScore = Math.min(tracks / 50, 1) * 10 // Max 10 points for track count
-    
+
     return Math.min(Math.round(followerScore + trackScore), 100)
   }
 
@@ -458,7 +453,7 @@ export class SpotifyClient {
    */
   private async enhancePlaylistsWithScraping(playlists: Playlist[]): Promise<Playlist[]> {
     if (playlists.length === 0) return playlists
-    
+
     try {
       const playlistIds = playlists.map(p => p.id)
       const response = await $fetch(`${this.config.n8nWebhookUrl}/enhance-playlists`, {
@@ -480,10 +475,9 @@ export class SpotifyClient {
       if (response.success && response.enhancedPlaylists) {
         return this.mergeScrapedData(playlists, response.enhancedPlaylists)
       }
-      
+
       return playlists
-      
-    } catch (error: any) {
+    } catch (error) {
       console.warn('Playlist enhancement failed, returning original data:', error.message)
       return playlists
     }
@@ -492,13 +486,13 @@ export class SpotifyClient {
   /**
    * Merge scraped data with API data
    */
-  private mergeScrapedData(apiPlaylists: Playlist[], scrapedData: any[]): Playlist[] {
+  private mergeScrapedData(apiPlaylists: Playlist[], scrapedData: unknown[]): Playlist[] {
     const scrapedMap = new Map(scrapedData.map(item => [item.id, item.scrapedData]))
-    
-    return apiPlaylists.map(playlist => {
+
+    return apiPlaylists.map((playlist) => {
       const scraped = scrapedMap.get(playlist.id)
       if (!scraped) return playlist
-      
+
       return {
         ...playlist,
         // Override with more accurate scraped data where available
@@ -552,7 +546,7 @@ export class SpotifyClient {
    */
   private async requestAccessToken(): Promise<void> {
     const credentials = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString('base64')
-    
+
     try {
       const response = await $fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
@@ -565,8 +559,7 @@ export class SpotifyClient {
 
       this.accessToken = response.access_token
       this.tokenExpiresAt = Date.now() + response.expires_in * 1000
-
-    } catch (error: any) {
+    } catch (error) {
       throw new SpotifyApiError(
         'Failed to obtain access token',
         {
@@ -595,7 +588,7 @@ export class SpotifyClient {
     }
 
     const requestId = Math.random().toString(36).substr(2, 9)
-    
+
     try {
       const response = await $fetch(url.toString(), {
         headers: {
@@ -613,8 +606,7 @@ export class SpotifyClient {
         },
         requestId
       }
-
-    } catch (error: any) {
+    } catch (error) {
       throw this.handleApiError(error, `API request failed: ${endpoint}`)
     }
   }
@@ -622,13 +614,13 @@ export class SpotifyClient {
   /**
    * Handle API errors with intelligent classification
    */
-  private handleApiError(error: any, context: string): SpotifyApiError {
+  private handleApiError(error, context: string): SpotifyApiError {
     const status = error.status || error.response?.status || 500
     const message = error.message || error.response?.statusText || 'Unknown error'
-    
+
     let retryable = false
     let retryAfter: number | undefined
-    
+
     switch (status) {
       case 401:
         // Token expired, retryable after refresh
@@ -648,7 +640,7 @@ export class SpotifyClient {
         retryable = true
         break
     }
-    
+
     return new SpotifyApiError(
       `${context}: ${message}`,
       {
@@ -668,11 +660,11 @@ export class SpotifyClient {
     if (!request.genres || request.genres.length === 0) {
       throw new SpotifyApiError('At least one genre is required', { status: 400, message: 'Missing genres' })
     }
-    
+
     if (request.genres.length > 10) {
       throw new SpotifyApiError('Maximum 10 genres allowed', { status: 400, message: 'Too many genres' })
     }
-    
+
     if (request.minFollowers && request.minFollowers < 0) {
       throw new SpotifyApiError('Minimum followers cannot be negative', { status: 400, message: 'Invalid minFollowers' })
     }
@@ -687,13 +679,13 @@ export class SpotifyClient {
   /**
    * Utility methods
    */
-  private generateCacheKey(operation: string, params: any): string {
+  private generateCacheKey(operation: string, params: unknown): string {
     const hash = Buffer.from(JSON.stringify(params)).toString('base64')
     return `spotify_${operation}_${hash}`
   }
 
   private formatGenreName(genre: string): string {
-    return genre.split('-').map(word => 
+    return genre.split('-').map(word =>
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ')
   }
@@ -704,10 +696,10 @@ export class SpotifyClient {
       'rock': ['alt-rock', 'indie-rock', 'classic-rock'],
       'electronic': ['techno', 'house', 'ambient'],
       'hip-hop': ['rap', 'trap', 'old-school'],
-      'jazz': ['smooth-jazz', 'bebop', 'fusion'],
+      'jazz': ['smooth-jazz', 'bebop', 'fusion']
       // Add more mappings as needed
     }
-    
+
     return genreMap[genre] || []
   }
 }
@@ -717,39 +709,39 @@ export class SpotifyClient {
  */
 class RateLimiter {
   private requests: number[] = []
-  private config: { requestsPerMinute: number; burstLimit: number }
+  private config: { requestsPerMinute: number, burstLimit: number }
 
-  constructor(config: { requestsPerMinute: number; burstLimit: number }) {
+  constructor(config: { requestsPerMinute: number, burstLimit: number }) {
     this.config = config
   }
 
   async waitForSlot(): Promise<void> {
     const now = Date.now()
     const oneMinuteAgo = now - 60000
-    
+
     // Clean old requests
     this.requests = this.requests.filter(time => time > oneMinuteAgo)
-    
+
     // Check if we're at the limit
     if (this.requests.length >= this.config.requestsPerMinute) {
       const oldestRequest = Math.min(...this.requests)
       const waitTime = 60000 - (now - oldestRequest) + 100 // Add small buffer
-      
+
       if (waitTime > 0) {
         await new Promise(resolve => setTimeout(resolve, waitTime))
         return this.waitForSlot() // Recursive call after waiting
       }
     }
-    
+
     // Check burst limit
     const lastSecond = now - 1000
     const recentRequests = this.requests.filter(time => time > lastSecond)
-    
+
     if (recentRequests.length >= this.config.burstLimit) {
       await new Promise(resolve => setTimeout(resolve, 1100))
       return this.waitForSlot()
     }
-    
+
     // Add this request to the list
     this.requests.push(now)
   }
@@ -759,12 +751,12 @@ class RateLimiter {
  * Cache Manager Implementation
  */
 class CacheManager {
-  private cache = new Map<string, { data: any; expiresAt: number }>()
-  private config: { tokenTtl: number; responseTtl: number }
+  private cache = new Map<string, { data: unknown, expiresAt: number }>()
+  private config: { tokenTtl: number, responseTtl: number }
 
-  constructor(config: { tokenTtl: number; responseTtl: number }) {
+  constructor(config: { tokenTtl: number, responseTtl: number }) {
     this.config = config
-    
+
     // Clean expired entries every 5 minutes
     setInterval(() => this.cleanup(), 5 * 60 * 1000)
   }
@@ -772,12 +764,12 @@ class CacheManager {
   async get<T>(key: string): Promise<T | null> {
     const entry = this.cache.get(key)
     if (!entry) return null
-    
+
     if (Date.now() > entry.expiresAt) {
       this.cache.delete(key)
       return null
     }
-    
+
     return entry.data as T
   }
 
@@ -803,7 +795,7 @@ class CacheManager {
  */
 export function createSpotifyClient(): SpotifyClient {
   const config = useRuntimeConfig()
-  
+
   return new SpotifyClient({
     clientId: config.spotifyClientId,
     clientSecret: config.spotifyClientSecret,

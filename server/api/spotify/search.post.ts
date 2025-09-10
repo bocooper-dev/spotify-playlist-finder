@@ -58,6 +58,8 @@ export default defineEventHandler(async (event) => {
 
     // Sanitize and validate search request
     const searchRequest: SearchRequest = {
+      id: requestId,
+      timestamp: new Date().toISOString(),
       genres: body.genres || [],
       minFollowers: body.minFollowers || 0,
       maxFollowers: body.maxFollowers,
@@ -113,7 +115,6 @@ export default defineEventHandler(async (event) => {
         searchMetadata: {
           ...cached.searchMetadata,
           cacheHit: true,
-          requestId,
           executionTime: Date.now() - startTime
         }
       }
@@ -182,7 +183,7 @@ export default defineEventHandler(async (event) => {
         enhanced: searchRequest.enhanceWithScraping
       }
     }
-  } catch (error: any) {
+  } catch (error) {
     // Handle validation errors
     if (error.statusCode === 400 && error.data?.code === 'VALIDATION_FAILED') {
       setHeader(event, 'X-Response-Time', `${Date.now() - startTime}ms`)
@@ -210,7 +211,7 @@ export default defineEventHandler(async (event) => {
         success: true,
         data: result.result,
         metadata: {
-          totalPlaylists: result.result.playlists?.length || 0,
+          totalPlaylists: result.result?.playlists?.length || 0,
           executionTime: Date.now() - startTime,
           cached: true,
           requestId,
@@ -222,7 +223,7 @@ export default defineEventHandler(async (event) => {
     // Handle different error types
     const finalError = result.finalError
     let statusCode = 500
-    const errorResponse: any = {
+    const errorResponse = {
       success: false,
       error: {
         code: finalError.details.code,
@@ -290,8 +291,8 @@ export default defineEventHandler(async (event) => {
 async function addPaddingPlaylists(
   searchResult: SearchResult,
   searchRequest: SearchRequest,
-  spotifyClient: any
-): Promise<{ playlists: any[] } | null> {
+  spotifyClient: unknown
+): Promise<{ playlists: unknown[] } | null> {
   try {
     const needed = 50 - searchResult.playlists.length
     if (needed <= 0) return null
@@ -313,7 +314,7 @@ async function addPaddingPlaylists(
     // Filter out duplicates and take only what we need
     const existingIds = new Set(searchResult.playlists.map(p => p.id))
     const uniquePaddingPlaylists = paddingResult.playlists
-      .filter((p: any) => !existingIds.has(p.id))
+      .filter((p: unknown) => !existingIds.has(p.id))
       .slice(0, needed)
 
     return {

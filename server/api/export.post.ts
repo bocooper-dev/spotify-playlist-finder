@@ -170,7 +170,7 @@ export default defineEventHandler(async (event) => {
     setHeader(event, 'Content-Disposition', `attachment; filename="${exportResult.filename}"`)
 
     return exportResult.content
-  } catch (error: any) {
+  } catch (error) {
     // Handle validation errors
     if (error.statusCode && error.statusCode < 500) {
       setHeader(event, 'X-Response-Time', `${Date.now() - startTime}ms`)
@@ -192,7 +192,7 @@ export default defineEventHandler(async (event) => {
     // Export operations are generally not recoverable
     const finalError = result.finalError
     let statusCode = 500
-    const errorResponse: any = {
+    const errorResponse: unknown = {
       success: false,
       error: {
         code: finalError.details.code,

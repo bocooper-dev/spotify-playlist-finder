@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest'
 import { $fetch } from '@nuxt/test-utils/e2e'
-import type { Playlist, PlaylistOwner, ContactInfo } from '~/types'
+import { describe, expect, it } from 'vitest'
+import type { ContactInfo, Playlist, PlaylistOwner } from '~/types'
 
 /**
  * Contract test for GET /api/spotify/playlist/:id
  * Reference: api-contract.yaml lines 61-80
- * 
+ *
  * ⚠️ CRITICAL: This test MUST FAIL before implementation!
  * The endpoint does not exist yet - this validates the contract.
  */
@@ -110,7 +110,7 @@ describe('GET /api/spotify/playlist/:id - Contract Test', () => {
       await $fetch(`/api/spotify/playlist/${nonExistentId}`)
       // Should not reach here
       expect(false).toBe(true)
-    } catch (error: any) {
+    } catch (error) {
       // Should return 404 Not Found per api-contract.yaml line 79-80
       expect(error.response?.status).toBe(404)
       expect(error.response?.data).toHaveProperty('code')
@@ -124,7 +124,7 @@ describe('GET /api/spotify/playlist/:id - Contract Test', () => {
     try {
       await $fetch(`/api/spotify/playlist/${invalidId}`)
       expect(false).toBe(true) // Should not reach here
-    } catch (error: any) {
+    } catch (error) {
       // Should handle invalid ID appropriately
       expect([400, 404]).toContain(error.response?.status)
     }

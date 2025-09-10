@@ -1,9 +1,9 @@
 /**
  * Export Utilities Library
- * 
+ *
  * Provides comprehensive data export functionality for playlist search results.
  * Supports multiple formats with data transformation and validation.
- * 
+ *
  * Features:
  * - JSON and CSV export formats
  * - Data sanitization and formatting
@@ -12,7 +12,7 @@
  * - File generation utilities
  */
 
-import type { SearchResult, ExportData, ExportPlaylist } from '~/types'
+import type { ExportData, ExportPlaylist, SearchResult } from '~/types'
 
 export interface ExportOptions {
   format: 'json' | 'csv'
@@ -47,7 +47,7 @@ export class ExportError extends Error {
   constructor(
     message: string,
     public code: string,
-    public details?: any
+    public details?: unknown
   ) {
     super(message)
     this.name = 'ExportError'
@@ -83,14 +83,14 @@ export class PlaylistExporter {
     try {
       // Validate input
       this.validateSearchResult(searchResult)
-      
+
       // Transform data for export
       const exportData = this.transformSearchResultForExport(searchResult, exportOptions)
-      
+
       // Generate content based on format
       let content: string
       let contentType: string
-      
+
       switch (exportOptions.format) {
         case 'json':
           content = this.generateJsonExport(exportData, exportOptions)
@@ -106,10 +106,10 @@ export class PlaylistExporter {
             'UNSUPPORTED_FORMAT'
           )
       }
-      
+
       // Generate filename
       const filename = this.generateFilename(searchResult, exportOptions)
-      
+
       // Calculate metrics
       const metrics: ExportMetrics = {
         exportTime: Date.now() - startTime,
@@ -117,7 +117,7 @@ export class PlaylistExporter {
         fieldsIncluded: this.countFields(exportData.playlists[0] || {}),
         dataSize: Buffer.byteLength(content, 'utf8')
       }
-      
+
       return {
         content,
         contentType,
@@ -125,12 +125,11 @@ export class PlaylistExporter {
         size: metrics.dataSize,
         checksum: this.generateChecksum(content)
       }
-      
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof ExportError) {
         throw error
       }
-      
+
       throw new ExportError(
         `Export failed: ${error.message}`,
         'EXPORT_FAILED',
@@ -146,8 +145,8 @@ export class PlaylistExporter {
     searchResult: SearchResult,
     options: ExportOptions
   ): ExportData {
-    const transformedPlaylists: ExportPlaylist[] = searchResult.playlists.map(playlist => {
-      let exportPlaylist: ExportPlaylist = {
+    const transformedPlaylists: ExportPlaylist[] = searchResult.playlists.map((playlist) => {
+      const exportPlaylist: ExportPlaylist = {
         name: this.sanitizeString(playlist.name, options),
         url: playlist.url,
         followers: playlist.followerCount,
@@ -198,7 +197,7 @@ export class PlaylistExporter {
       } else {
         return JSON.stringify(exportData.playlists, null, 2)
       }
-    } catch (error: any) {
+    } catch (error) {
       throw new ExportError(
         `JSON serialization failed: ${error.message}`,
         'JSON_SERIALIZATION_FAILED'
@@ -213,40 +212,39 @@ export class PlaylistExporter {
     try {
       const csvOptions = options.csvOptions!
       const playlists = exportData.playlists
-      
+
       if (playlists.length === 0) {
         return options.includeMetadata ? this.generateCsvMetadata(exportData) : ''
       }
-      
+
       // Generate CSV headers
       const headers = Object.keys(playlists[0])
       let csvContent = ''
-      
+
       // Add metadata as comments if requested
       if (options.includeMetadata) {
         csvContent += this.generateCsvMetadata(exportData)
         csvContent += '\n'
       }
-      
+
       // Add headers if requested
       if (csvOptions.includeHeaders) {
         csvContent += this.formatCsvRow(headers, csvOptions)
         csvContent += '\n'
       }
-      
+
       // Add data rows
       for (const playlist of playlists) {
-        const values = headers.map(header => {
+        const values = headers.map((header) => {
           const value = (playlist as any)[header]
           return this.formatCsvValue(value, header, csvOptions)
         })
         csvContent += this.formatCsvRow(values, csvOptions)
         csvContent += '\n'
       }
-      
+
       return csvContent.trim()
-      
-    } catch (error: any) {
+    } catch (error) {
       throw new ExportError(
         `CSV generation failed: ${error.message}`,
         'CSV_GENERATION_FAILED'
@@ -282,29 +280,29 @@ export class PlaylistExporter {
    * Format individual CSV value
    */
   private formatCsvValue(
-    value: any, 
-    fieldName: string, 
+    value: unknown,
+    fieldName: string,
     options: ExportOptions['csvOptions']
   ): string {
     if (value === null || value === undefined) {
       return ''
     }
-    
+
     // Handle different data types
     if (typeof value === 'boolean') {
       return value ? 'true' : 'false'
     }
-    
+
     if (typeof value === 'number') {
       return value.toString()
     }
-    
+
     // Convert to string and sanitize
     let stringValue = String(value)
-    
+
     // Remove line breaks for CSV compatibility
     stringValue = stringValue.replace(/[\r\n]/g, ' ')
-    
+
     return stringValue
   }
 
@@ -312,44 +310,44 @@ export class PlaylistExporter {
    * Escape CSV value with quotes if needed
    */
   private escapeCsvValue(value: string, options: ExportOptions['csvOptions']): string {
-    const needsQuoting = 
-      value.includes(options!.delimiter) ||
-      value.includes('"') ||
-      value.includes('\n') ||
-      value.includes('\r')
-    
+    const needsQuoting
+      = value.includes(options!.delimiter)
+        || value.includes('"')
+        || value.includes('\n')
+        || value.includes('\r')
+
     if (needsQuoting) {
       // Escape internal quotes by doubling them
       const escaped = value.replace(/"/g, '""')
       return `"${escaped}"`
     }
-    
+
     return value
   }
 
   /**
    * Format owner contact information
    */
-  private formatOwnerContact(contactInfo: any, options: ExportOptions): string {
+  private formatOwnerContact(contactInfo: unknown, options: ExportOptions): string {
     if (!contactInfo) return 'Not available'
-    
+
     const parts: string[] = []
-    
+
     if (contactInfo.username) {
       parts.push(`@${contactInfo.username}`)
     }
-    
+
     if (contactInfo.profileUrl) {
       parts.push(contactInfo.profileUrl)
     }
-    
+
     if (contactInfo.socialLinks && contactInfo.socialLinks.length > 0) {
-      const socialLinks = contactInfo.socialLinks.map((link: any) => 
+      const socialLinks = contactInfo.socialLinks.map((link: unknown) =>
         `${link.platform}: ${link.url}`
       ).join('; ')
       parts.push(socialLinks)
     }
-    
+
     return parts.length > 0 ? parts.join(' | ') : 'Not available'
   }
 
@@ -359,7 +357,7 @@ export class PlaylistExporter {
   private formatDate(dateString: string, options: ExportOptions): string {
     try {
       const date = new Date(dateString)
-      
+
       if (options.dateFormat === 'human') {
         return date.toLocaleString('en-US', {
           year: 'numeric',
@@ -369,7 +367,7 @@ export class PlaylistExporter {
           minute: '2-digit'
         })
       }
-      
+
       return date.toISOString()
     } catch {
       return dateString // Return original if parsing fails
@@ -381,9 +379,9 @@ export class PlaylistExporter {
    */
   private sanitizeString(value: string | null, options: ExportOptions): string {
     if (!value) return ''
-    
+
     if (!options.sanitizeData) return value
-    
+
     return value
       .trim()
       .replace(/[\u0000-\u001F\u007F]/g, '') // Remove control characters
@@ -398,11 +396,11 @@ export class PlaylistExporter {
     if (options.filename) {
       return this.ensureFileExtension(options.filename, options.format)
     }
-    
+
     const timestamp = new Date().toISOString().split('T')[0]
     const genres = searchResult.searchMetadata.genresSearched.slice(0, 3).join('-')
     const sanitizedGenres = genres.replace(/[^a-zA-Z0-9-]/g, '')
-    
+
     const baseName = `spotify-playlists-${sanitizedGenres}-${timestamp}`
     return this.ensureFileExtension(baseName, options.format)
   }
@@ -415,7 +413,7 @@ export class PlaylistExporter {
     if (filename.endsWith(extension)) {
       return filename
     }
-    
+
     // Remove any existing extension
     const nameWithoutExt = filename.replace(/\.[^.]*$/, '')
     return `${nameWithoutExt}${extension}`
@@ -432,7 +430,7 @@ export class PlaylistExporter {
   /**
    * Count fields in an object (for metrics)
    */
-  private countFields(obj: any): number {
+  private countFields(obj: unknown): number {
     if (!obj || typeof obj !== 'object') return 0
     return Object.keys(obj).length
   }
@@ -444,11 +442,11 @@ export class PlaylistExporter {
     if (!searchResult) {
       throw new ExportError('Search result is required', 'MISSING_DATA')
     }
-    
+
     if (!searchResult.playlists || !Array.isArray(searchResult.playlists)) {
       throw new ExportError('Search result must contain playlists array', 'INVALID_DATA')
     }
-    
+
     if (!searchResult.searchMetadata) {
       throw new ExportError('Search result must contain metadata', 'MISSING_METADATA')
     }
@@ -464,25 +462,24 @@ export class ClientExportUtils {
    */
   static downloadExport(exportResult: ExportResult): void {
     try {
-      const blob = new Blob([exportResult.content], { 
-        type: exportResult.contentType 
+      const blob = new Blob([exportResult.content], {
+        type: exportResult.contentType
       })
-      
+
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
-      
+
       link.href = url
       link.download = exportResult.filename
       link.style.display = 'none'
-      
+
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
-      
+
       // Clean up the URL object
       setTimeout(() => URL.revokeObjectURL(url), 100)
-      
-    } catch (error: any) {
+    } catch (error) {
       throw new ExportError(
         `Download failed: ${error.message}`,
         'DOWNLOAD_FAILED'
@@ -503,13 +500,13 @@ export class ClientExportUtils {
         textArea.value = content
         textArea.style.position = 'fixed'
         textArea.style.opacity = '0'
-        
+
         document.body.appendChild(textArea)
         textArea.select()
         document.execCommand('copy')
         document.body.removeChild(textArea)
       }
-    } catch (error: any) {
+    } catch (error) {
       throw new ExportError(
         `Clipboard copy failed: ${error.message}`,
         'CLIPBOARD_FAILED'
@@ -523,12 +520,12 @@ export class ClientExportUtils {
   static estimateExportSize(
     searchResult: SearchResult,
     format: 'json' | 'csv'
-  ): { size: number; readableSize: string } {
+  ): { size: number, readableSize: string } {
     const playlistCount = searchResult.playlists.length
-    
+
     // Rough estimates based on average data sizes
     let bytesPerPlaylist: number
-    
+
     switch (format) {
       case 'json':
         bytesPerPlaylist = 800 // Average JSON size per playlist
@@ -539,9 +536,9 @@ export class ClientExportUtils {
       default:
         bytesPerPlaylist = 600
     }
-    
+
     const totalSize = playlistCount * bytesPerPlaylist + 500 // Add metadata overhead
-    
+
     return {
       size: totalSize,
       readableSize: this.formatBytes(totalSize)
@@ -553,11 +550,11 @@ export class ClientExportUtils {
    */
   private static formatBytes(bytes: number): string {
     if (bytes === 0) return '0 Bytes'
-    
+
     const k = 1024
     const sizes = ['Bytes', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
-    
+
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
@@ -570,25 +567,24 @@ export class ClientExportUtils {
     maxRecords: number = 5
   ): string {
     const exporter = new PlaylistExporter()
-    
+
     // Create a limited search result for preview
     const previewResult: SearchResult = {
       ...searchResult,
       playlists: searchResult.playlists.slice(0, maxRecords),
       totalFound: Math.min(searchResult.totalFound, maxRecords)
     }
-    
+
     try {
       const exportPromise = exporter.exportSearchResults(previewResult, {
         format,
         includeMetadata: false,
         sanitizeData: true
       })
-      
+
       // This would need to be handled properly in async context
       // For now, return a placeholder
       return `Preview of ${format.toUpperCase()} export with ${maxRecords} records...`
-      
     } catch (error) {
       return `Preview generation failed: ${error}`
     }
@@ -604,19 +600,19 @@ export class ExportValidator {
    */
   static validateOptions(options: Partial<ExportOptions>): string[] {
     const errors: string[] = []
-    
+
     if (options.format && !['json', 'csv'].includes(options.format)) {
       errors.push('Format must be either "json" or "csv"')
     }
-    
+
     if (options.csvOptions?.delimiter && options.csvOptions.delimiter.length !== 1) {
       errors.push('CSV delimiter must be a single character')
     }
-    
+
     if (options.filename && !/^[a-zA-Z0-9-_. ]+$/.test(options.filename)) {
       errors.push('Filename contains invalid characters')
     }
-    
+
     return errors
   }
 
@@ -625,11 +621,11 @@ export class ExportValidator {
    */
   static validateExportResult(result: ExportResult): boolean {
     return !!(
-      result.content &&
-      result.contentType &&
-      result.filename &&
-      result.size > 0 &&
-      result.checksum
+      result.content
+      && result.contentType
+      && result.filename
+      && result.size > 0
+      && result.checksum
     )
   }
 }

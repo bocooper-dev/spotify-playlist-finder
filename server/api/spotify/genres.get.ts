@@ -83,7 +83,7 @@ export default defineEventHandler(async (event) => {
         source: 'spotify-api'
       }
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     const context = createErrorContext('get-genres', {
       requestId,
       endpoint: '/api/spotify/genres',
@@ -116,7 +116,7 @@ export default defineEventHandler(async (event) => {
     // Handle different error types
     const finalError = result.finalError
     let statusCode = 500
-    const errorResponse: any = {
+    const errorResponse: unknown = {
       success: false,
       error: {
         code: finalError.details.code,

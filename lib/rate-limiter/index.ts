@@ -1,9 +1,9 @@
 /**
  * Rate Limiter Utility Library
- * 
+ *
  * Provides comprehensive rate limiting functionality with multiple strategies,
  * distributed coordination, and intelligent backoff mechanisms.
- * 
+ *
  * Features:
  * - Multiple rate limiting algorithms (Token Bucket, Sliding Window, Fixed Window)
  * - Per-user, per-IP, and global rate limiting
@@ -17,20 +17,20 @@ export interface RateLimitConfig {
   // Basic rate limiting
   requests: number
   window: number // in seconds
-  
+
   // Advanced options
   strategy: 'token-bucket' | 'sliding-window' | 'fixed-window'
   keyGenerator?: (context: RateLimitContext) => string
   skipSuccessfulRequests?: boolean
   skipFailedRequests?: boolean
-  
+
   // Burst handling
   burst?: {
     enabled: boolean
     multiplier: number // Allow burst up to requests * multiplier
     cooldown: number // Cooldown period after burst
   }
-  
+
   // Backoff configuration
   backoff?: {
     enabled: boolean
@@ -39,7 +39,7 @@ export interface RateLimitConfig {
     maxDelay: number
     jitter: boolean
   }
-  
+
   // Distributed coordination
   distributed?: {
     enabled: boolean
@@ -49,7 +49,7 @@ export interface RateLimitConfig {
     }
     syncInterval: number
   }
-  
+
   // Error handling
   onLimitReached?: (context: RateLimitContext) => Promise<void>
   onError?: (error: Error, context: RateLimitContext) => Promise<void>
@@ -116,13 +116,13 @@ export class RateLimitError extends Error {
  */
 abstract class RateLimitStrategy {
   abstract name: string
-  
+
   abstract check(
-    key: string, 
-    config: RateLimitConfig, 
+    key: string,
+    config: RateLimitConfig,
     state: RateLimitState
   ): Promise<RateLimitResult>
-  
+
   protected generateHeaders(result: RateLimitResult): Record<string, string> {
     return {
       'X-RateLimit-Limit': result.limit.toString(),
@@ -132,7 +132,7 @@ abstract class RateLimitStrategy {
       ...(result.backoffDelay && { 'X-RateLimit-Backoff': result.backoffDelay.toString() })
     }
   }
-  
+
   protected calculateRetryAfter(resetTime: number): number {
     return Math.max(0, Math.ceil((resetTime - Date.now()) / 1000))
   }
@@ -143,7 +143,7 @@ abstract class RateLimitStrategy {
  */
 class TokenBucketStrategy extends RateLimitStrategy {
   name = 'token-bucket'
-  
+
   async check(
     key: string,
     config: RateLimitConfig,
@@ -151,32 +151,32 @@ class TokenBucketStrategy extends RateLimitStrategy {
   ): Promise<RateLimitResult> {
     const now = Date.now()
     const windowMs = config.window * 1000
-    
+
     // Initialize state if needed
     if (!state.lastRefill) {
       state.tokens = config.requests
       state.lastRefill = now
     }
-    
+
     // Calculate tokens to add based on time elapsed
     const timeElapsed = now - state.lastRefill
     const tokensToAdd = Math.floor((timeElapsed / windowMs) * config.requests)
-    
+
     if (tokensToAdd > 0) {
       state.tokens = Math.min(config.requests, state.tokens + tokensToAdd)
       state.lastRefill = now
     }
-    
+
     // Handle burst tokens if enabled
     let burstTokensAvailable = 0
     if (config.burst?.enabled) {
       const maxBurstTokens = config.requests * config.burst.multiplier - config.requests
       burstTokensAvailable = maxBurstTokens - (state.burstTokens || 0)
     }
-    
+
     const totalTokensAvailable = state.tokens + burstTokensAvailable
     const allowed = totalTokensAvailable > 0
-    
+
     if (allowed) {
       if (state.tokens > 0) {
         state.tokens--
@@ -184,9 +184,9 @@ class TokenBucketStrategy extends RateLimitStrategy {
         state.burstTokens = (state.burstTokens || 0) + 1
       }
     }
-    
+
     const resetTime = state.lastRefill + windowMs
-    
+
     return {
       allowed,
       limit: config.requests,
@@ -211,7 +211,7 @@ class TokenBucketStrategy extends RateLimitStrategy {
  */
 class SlidingWindowStrategy extends RateLimitStrategy {
   name = 'sliding-window'
-  
+
   async check(
     key: string,
     config: RateLimitConfig,
@@ -220,24 +220,24 @@ class SlidingWindowStrategy extends RateLimitStrategy {
     const now = Date.now()
     const windowMs = config.window * 1000
     const cutoff = now - windowMs
-    
+
     // Initialize request history if needed
     if (!state.requestHistory) {
       state.requestHistory = []
     }
-    
+
     // Remove old requests outside the window
     state.requestHistory = state.requestHistory.filter(timestamp => timestamp > cutoff)
-    
+
     const currentRequests = state.requestHistory.length
     const allowed = currentRequests < config.requests
-    
+
     if (allowed) {
       state.requestHistory.push(now)
     }
-    
+
     const resetTime = state.requestHistory[0] ? state.requestHistory[0] + windowMs : now + windowMs
-    
+
     return {
       allowed,
       limit: config.requests,
@@ -261,7 +261,7 @@ class SlidingWindowStrategy extends RateLimitStrategy {
  */
 class FixedWindowStrategy extends RateLimitStrategy {
   name = 'fixed-window'
-  
+
   async check(
     key: string,
     config: RateLimitConfig,
@@ -271,20 +271,20 @@ class FixedWindowStrategy extends RateLimitStrategy {
     const windowMs = config.window * 1000
     const windowStart = Math.floor(now / windowMs) * windowMs
     const windowEnd = windowStart + windowMs
-    
+
     // Reset counters if we're in a new window
     if (!state.lastRefill || state.lastRefill < windowStart) {
       state.tokens = 0
       state.lastRefill = windowStart
     }
-    
+
     const currentRequests = state.tokens
     const allowed = currentRequests < config.requests
-    
+
     if (allowed) {
       state.tokens++
     }
-    
+
     return {
       allowed,
       limit: config.requests,
@@ -315,7 +315,7 @@ class BackoffCalculator {
     jitter: boolean = false
   ): number {
     let delay: number
-    
+
     switch (strategy) {
       case 'exponential':
         delay = baseDelay * Math.pow(2, attempt - 1)
@@ -329,30 +329,30 @@ class BackoffCalculator {
       default:
         delay = baseDelay
     }
-    
+
     // Apply maximum delay limit
     delay = Math.min(delay, maxDelay)
-    
+
     // Add jitter to prevent thundering herd
     if (jitter) {
       delay = delay * (0.5 + Math.random() * 0.5)
     }
-    
+
     return Math.floor(delay)
   }
-  
+
   private static fibonacci(n: number): number {
     if (n <= 1) return n
-    
+
     let a = 0
     let b = 1
-    
+
     for (let i = 2; i <= n; i++) {
       const temp = a + b
       a = b
       b = temp
     }
-    
+
     return b
   }
 }
@@ -373,13 +373,14 @@ export class RateLimiter {
     peakRequestRate: 0,
     distributedSyncCount: 0
   }
-  private redis: any = null
-  
+
+  private redis: unknown = null
+
   constructor(private configs: Map<string, RateLimitConfig> = new Map()) {
     this.initializeStrategies()
     this.initializeDistributed()
   }
-  
+
   /**
    * Check rate limit for a given context
    */
@@ -394,24 +395,24 @@ export class RateLimiter {
         'CONFIG_NOT_FOUND'
       )
     }
-    
+
     const key = this.generateKey(limitName, context, config)
     const strategy = this.strategies.get(config.strategy)
-    
+
     if (!strategy) {
       throw new RateLimitError(
         `Rate limit strategy not found: ${config.strategy}`,
         'STRATEGY_NOT_FOUND'
       )
     }
-    
+
     // Get or initialize state
-    let state = await this.getState(key, config)
-    
+    const state = await this.getState(key, config)
+
     // Check for active backoff period
     if (state.backoffUntil && Date.now() < state.backoffUntil) {
       const backoffDelay = Math.ceil((state.backoffUntil - Date.now()) / 1000)
-      
+
       return {
         allowed: false,
         limit: config.requests,
@@ -423,14 +424,14 @@ export class RateLimiter {
         strategy: strategy.name
       }
     }
-    
+
     // Apply rate limiting strategy
     const result = await strategy.check(key, config, state)
-    
+
     // Handle backoff if request was denied
     if (!result.allowed && config.backoff?.enabled) {
       state.consecutiveFailures++
-      
+
       const backoffDelay = BackoffCalculator.calculateDelay(
         state.consecutiveFailures,
         config.backoff.strategy,
@@ -438,7 +439,7 @@ export class RateLimiter {
         config.backoff.maxDelay,
         config.backoff.jitter
       )
-      
+
       state.backoffUntil = Date.now() + backoffDelay
       result.backoffDelay = Math.ceil(backoffDelay / 1000)
       this.metrics.backoffTriggers++
@@ -447,46 +448,46 @@ export class RateLimiter {
       state.consecutiveFailures = 0
       state.backoffUntil = undefined
     }
-    
+
     // Save updated state
     await this.saveState(key, state, config)
-    
+
     // Update metrics
     this.updateMetrics(result)
-    
+
     // Call configured callbacks
     if (!result.allowed && config.onLimitReached) {
       try {
         await config.onLimitReached(context)
-      } catch (error: any) {
+      } catch (error) {
         console.warn('Rate limit callback error:', error)
       }
     }
-    
+
     return result
   }
-  
+
   /**
    * Add or update rate limit configuration
    */
   setConfig(name: string, config: RateLimitConfig): void {
     this.configs.set(name, config)
   }
-  
+
   /**
    * Remove rate limit configuration
    */
   removeConfig(name: string): void {
     this.configs.delete(name)
   }
-  
+
   /**
    * Get current metrics
    */
   getMetrics(): RateLimitMetrics {
     return { ...this.metrics }
   }
-  
+
   /**
    * Reset metrics
    */
@@ -502,20 +503,20 @@ export class RateLimiter {
       distributedSyncCount: 0
     }
   }
-  
+
   /**
    * Clear all rate limit states
    */
   async clearStates(pattern?: string): Promise<number> {
     let cleared = 0
-    
+
     if (pattern) {
       const regex = new RegExp(pattern)
       for (const [key] of this.states) {
         if (regex.test(key)) {
           this.states.delete(key)
           cleared++
-          
+
           // Also clear from Redis if distributed
           if (this.redis) {
             try {
@@ -529,7 +530,7 @@ export class RateLimiter {
     } else {
       cleared = this.states.size
       this.states.clear()
-      
+
       // Clear from Redis if distributed
       if (this.redis) {
         try {
@@ -542,10 +543,10 @@ export class RateLimiter {
         }
       }
     }
-    
+
     return cleared
   }
-  
+
   /**
    * Get rate limit state for debugging
    */
@@ -555,7 +556,7 @@ export class RateLimiter {
       try {
         const redisKey = `ratelimit:${key}`
         const data = await this.redis.getItem(redisKey)
-        
+
         if (data) {
           const state = JSON.parse(data)
           // Also cache locally for performance
@@ -566,7 +567,7 @@ export class RateLimiter {
         console.warn('Redis get state error:', error)
       }
     }
-    
+
     // Fallback to local state
     let state = this.states.get(key)
     if (!state) {
@@ -578,14 +579,14 @@ export class RateLimiter {
       }
       this.states.set(key, state)
     }
-    
+
     return state
   }
-  
+
   private async saveState(key: string, state: RateLimitState, config: RateLimitConfig): Promise<void> {
     // Save locally
     this.states.set(key, state)
-    
+
     // Save to distributed storage if enabled
     if (config.distributed?.enabled && this.redis) {
       try {
@@ -598,40 +599,40 @@ export class RateLimiter {
       }
     }
   }
-  
+
   private generateKey(limitName: string, context: RateLimitContext, config: RateLimitConfig): string {
     if (config.keyGenerator) {
       return config.keyGenerator(context)
     }
-    
+
     // Default key generation strategy
     const parts = [limitName]
-    
+
     if (context.userId) {
       parts.push(`user:${context.userId}`)
     } else if (context.ip) {
       parts.push(`ip:${context.ip}`)
     }
-    
+
     if (context.endpoint) {
       parts.push(`endpoint:${context.endpoint}`)
     }
-    
+
     return parts.join(':')
   }
-  
+
   private initializeStrategies(): void {
     this.strategies.set('token-bucket', new TokenBucketStrategy())
     this.strategies.set('sliding-window', new SlidingWindowStrategy())
     this.strategies.set('fixed-window', new FixedWindowStrategy())
   }
-  
+
   private async initializeDistributed(): Promise<void> {
     // Check if any config requires distributed rate limiting
     const needsDistributed = Array.from(this.configs.values())
       .some(config => config.distributed?.enabled)
-    
-    if (needsDistributed && process.server) {
+
+    if (needsDistributed && import.meta.server) {
       try {
         this.redis = useStorage('redis')
       } catch (error) {
@@ -639,27 +640,27 @@ export class RateLimiter {
       }
     }
   }
-  
+
   private generateBackoffHeaders(backoffDelay: number): Record<string, string> {
     return {
       'X-RateLimit-Backoff': backoffDelay.toString(),
       'Retry-After': backoffDelay.toString()
     }
   }
-  
+
   private updateMetrics(result: RateLimitResult): void {
     this.metrics.totalRequests++
-    
+
     if (result.allowed) {
       this.metrics.allowedRequests++
     } else {
       this.metrics.blockedRequests++
     }
-    
+
     if (result.burstUsed && result.burstUsed > 0) {
       this.metrics.burstRequests++
     }
-    
+
     // Update average wait time
     if (result.retryAfter) {
       const totalWaitTime = this.metrics.averageWaitTime * this.metrics.blockedRequests + result.retryAfter
@@ -675,19 +676,19 @@ export function createRateLimitMiddleware(
   rateLimiter: RateLimiter,
   limitName: string,
   options: {
-    keyExtractor?: (event: any) => RateLimitContext
-    onLimitReached?: (event: any, result: RateLimitResult) => Promise<void>
-    skipIf?: (event: any) => boolean
+    keyExtractor?: (event: unknown) => RateLimitContext
+    onLimitReached?: (event: unknown, result: RateLimitResult) => Promise<void>
+    skipIf?: (event: unknown) => boolean
   } = {}
 ) {
-  return async (event: any) => {
+  return async (event: unknown) => {
     // Skip if condition is met
     if (options.skipIf && options.skipIf(event)) {
       return
     }
-    
+
     // Extract context
-    const context: RateLimitContext = options.keyExtractor 
+    const context: RateLimitContext = options.keyExtractor
       ? options.keyExtractor(event)
       : {
           key: 'default',
@@ -697,20 +698,20 @@ export function createRateLimitMiddleware(
           timestamp: Date.now(),
           headers: getHeaders(event)
         }
-    
+
     try {
       const result = await rateLimiter.checkLimit(limitName, context)
-      
+
       // Set rate limit headers
       for (const [key, value] of Object.entries(result.headers)) {
         setHeader(event, key, value)
       }
-      
+
       if (!result.allowed) {
         if (options.onLimitReached) {
           await options.onLimitReached(event, result)
         }
-        
+
         throw createError({
           statusCode: 429,
           statusMessage: 'Too Many Requests',
@@ -723,8 +724,7 @@ export function createRateLimitMiddleware(
           }
         })
       }
-      
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof RateLimitError) {
         throw createError({
           statusCode: 429,
@@ -736,7 +736,7 @@ export function createRateLimitMiddleware(
           }
         })
       }
-      
+
       // Log error but don't block request on rate limiter failures
       console.error('Rate limiter error:', error)
     }
@@ -754,7 +754,7 @@ export const CommonRateLimits = {
     strategy: 'sliding-window' as const,
     burst: { enabled: true, multiplier: 1.5, cooldown: 300 }
   },
-  
+
   // Authentication attempts
   auth: {
     requests: 5,
@@ -768,7 +768,7 @@ export const CommonRateLimits = {
       jitter: true
     }
   },
-  
+
   // Search operations
   search: {
     requests: 20,
@@ -776,7 +776,7 @@ export const CommonRateLimits = {
     strategy: 'token-bucket' as const,
     burst: { enabled: true, multiplier: 2, cooldown: 180 }
   },
-  
+
   // Export operations (expensive)
   export: {
     requests: 3,
@@ -797,17 +797,17 @@ export const CommonRateLimits = {
  */
 export function createRateLimiter(customConfigs: Record<string, RateLimitConfig> = {}): RateLimiter {
   const configs = new Map<string, RateLimitConfig>()
-  
+
   // Add common configurations
   for (const [name, config] of Object.entries(CommonRateLimits)) {
     configs.set(name, config)
   }
-  
+
   // Add custom configurations
   for (const [name, config] of Object.entries(customConfigs)) {
     configs.set(name, config)
   }
-  
+
   return new RateLimiter(configs)
 }
 
@@ -820,6 +820,6 @@ export function useRateLimiter(): RateLimiter {
   if (!globalRateLimiter) {
     globalRateLimiter = createRateLimiter()
   }
-  
+
   return globalRateLimiter
 }

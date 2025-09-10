@@ -43,7 +43,7 @@ const securityConfig: SecurityConfig = {
     /drop.*table/i,
     /\.\.\//,
     /%00/,
-    /\x00/
+    /\\x00/
   ]
 }
 
@@ -160,7 +160,7 @@ export default defineEventHandler(async (event) => {
             })
           }
         }
-      } catch (error: any) {
+      } catch (error) {
         // If body parsing fails, it might be malicious
         if (error.message?.includes('JSON')) {
           throw createError({
@@ -202,7 +202,7 @@ export default defineEventHandler(async (event) => {
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'geolocation=(), microphone=(), camera=()'
     })
-  } catch (error: any) {
+  } catch (error) {
     if (error.statusCode) {
       // Known security error, throw as-is
       throw error
@@ -236,7 +236,7 @@ export default defineEventHandler(async (event) => {
 /**
  * Calculate object nesting depth
  */
-function getObjectDepth(obj: any, depth = 0): number {
+function getObjectDepth(obj: unknown, depth = 0): number {
   if (depth > 20) return depth // Prevent infinite recursion
 
   if (obj && typeof obj === 'object') {

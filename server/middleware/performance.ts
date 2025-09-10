@@ -8,7 +8,6 @@
  * - Response size optimization
  */
 
-
 export default defineEventHandler(async (event) => {
   // Only apply to API routes
   if (!event.node.req.url?.startsWith('/api/')) {
@@ -41,7 +40,7 @@ export default defineEventHandler(async (event) => {
 
   // Hook into response end to collect metrics
   const originalEnd = event.node.res.end
-  event.node.res.end = function (chunk?: any, encoding?: any) {
+  event.node.res.end = function (chunk?: unknown, encoding?: unknown) {
     const responseTime = Date.now() - startTime
 
     // Set performance headers
@@ -64,7 +63,7 @@ export default defineEventHandler(async (event) => {
 /**
  * Set appropriate cache headers based on endpoint
  */
-function setCacheHeaders(event: any, url: string, method: string) {
+function setCacheHeaders(event: unknown, url: string, method: string) {
   if (method !== 'GET') {
     // No caching for non-GET requests
     setHeaders(event, {

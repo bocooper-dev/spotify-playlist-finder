@@ -84,7 +84,7 @@ async function checkCacheHealth() {
       responseTime: 0, // Would measure actual time
       message: retrieved ? 'Cache read/write successful' : 'Cache test failed'
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,
@@ -110,7 +110,7 @@ async function checkSpotifyHealth() {
       responseTime: 0, // Would measure actual time
       message: `Spotify API accessible, ${genres.length} genres available`
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,
@@ -137,7 +137,7 @@ function checkRateLimiterHealth() {
         blockedRequests: metrics.blockedRequests
       }
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,
@@ -173,7 +173,7 @@ async function checkDatabaseHealth() {
         message: 'Client-side: Database check skipped'
       }
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,
@@ -208,7 +208,7 @@ function checkMemoryHealth() {
         rss: Math.round(memUsage.rss / 1024 / 1024)
       }
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,
@@ -243,7 +243,7 @@ async function checkDiskHealth() {
         totalMB: stats.total
       }
     }
-  } catch (error: any) {
+  } catch (error) {
     return {
       healthy: false,
       responseTime: 0,

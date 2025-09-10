@@ -3,9 +3,9 @@
  * Reference: data-model.md lines 58-62
  */
 export enum ContactStatus {
-  PUBLIC = 'public',     // Full info available
-  LIMITED = 'limited',   // Partial info available
-  PRIVATE = 'private'    // No contact info available
+  PUBLIC = 'public', // Full info available
+  LIMITED = 'limited', // Partial info available
+  PRIVATE = 'private' // No contact info available
 }
 
 /**
@@ -13,9 +13,9 @@ export enum ContactStatus {
  * Reference: data-model.md lines 52-56
  */
 export interface SocialLink {
-  platform: string       // Platform name (Instagram, Twitter, etc.)
-  url: string            // Link URL
-  handle: string         // Username/handle
+  platform: string // Platform name (Instagram, Twitter, etc.)
+  url: string // Link URL
+  handle: string // Username/handle
 }
 
 /**
@@ -23,11 +23,11 @@ export interface SocialLink {
  * Reference: data-model.md lines 44-50
  */
 export interface ContactInfo {
-  username: string               // Spotify username
-  profileUrl: string             // Spotify profile URL
-  isContactPublic: boolean       // Whether contact info is available
-  socialLinks: SocialLink[]      // External social media links (if in bio)
-  contactStatus: ContactStatus   // Availability status
+  username: string // Spotify username
+  profileUrl: string // Spotify profile URL
+  isContactPublic: boolean // Whether contact info is available
+  socialLinks: SocialLink[] // External social media links (if in bio)
+  contactStatus: ContactStatus // Availability status
 }
 
 /**
@@ -35,10 +35,10 @@ export interface ContactInfo {
  * Reference: data-model.md lines 30-37
  */
 export interface PlaylistOwner {
-  id: string                     // Spotify user ID
-  displayName: string            // Public display name
-  profileUrl: string             // Spotify profile URL
-  imageUrl: string | null        // Profile image URL
-  followerCount: number | null   // User's follower count (if available)
-  contactInfo: ContactInfo       // Available contact information
+  id: string // Spotify user ID
+  displayName: string // Public display name
+  profileUrl: string // Spotify profile URL
+  imageUrl: string | null // Profile image URL
+  followerCount: number | null // User's follower count (if available)
+  contactInfo: ContactInfo // Available contact information
 }

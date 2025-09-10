@@ -187,7 +187,7 @@ export default defineEventHandler(async (event) => {
         lastFetched: enhancedPlaylist.lastFetched
       }
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Handle known client errors
     if (error.statusCode && error.statusCode < 500) {
       setHeader(event, 'X-Response-Time', `${Date.now() - startTime}ms`)
@@ -227,7 +227,7 @@ export default defineEventHandler(async (event) => {
     // Handle different error types
     const finalError = result.finalError
     let statusCode = 500
-    const errorResponse: any = {
+    const errorResponse: unknown = {
       success: false,
       error: {
         code: finalError.details.code,

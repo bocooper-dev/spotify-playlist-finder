@@ -13,7 +13,7 @@ import { getPerformanceStats } from '../middleware/performance'
 export default defineEventHandler(async (event) => {
   // Check for authorization (basic protection)
   const authHeader = getHeader(event, 'authorization')
-  const metricsKey = process.env.METRICS_API_KEY
+  const metricsKey = import.meta.env.METRICS_API_KEY
 
   if (metricsKey && authHeader !== `Bearer ${metricsKey}`) {
     throw createError({
@@ -53,9 +53,9 @@ export default defineEventHandler(async (event) => {
     console.error('Metrics collection failed:', error)
 
     // Return minimal metrics on error
-    return `# HELP spotify_metrics_error Metrics collection error
-# TYPE spotify_metrics_error counter
-spotify_metrics_error{error="${error.message}"} 1
+    return `# HELP spotify_metricserror Metrics collection error
+# TYPE spotify_metricserror counter
+spotify_metricserror{error="${error.message}"} 1
 `
   }
 })
@@ -206,7 +206,7 @@ function generatePrometheusMetrics(data: any): string {
   )
 
   addMetric(
-    'spotify_http_error_rate_percent',
+    'spotify_httperror_rate_percent',
     'gauge',
     'HTTP error rate percentage',
     data.performance.errorRate
@@ -306,21 +306,21 @@ function generatePrometheusMetrics(data: any): string {
 
   // Error metrics
   addMetric(
-    'spotify_errors_total',
+    'spotifyerrors_total',
     'counter',
     'Total number of errors',
     data.errors.totalErrors
   )
 
   addMetric(
-    'spotify_error_recovery_success_total',
+    'spotifyerror_recovery_success_total',
     'counter',
     'Total number of successful error recoveries',
     data.errors.recoverySuccess
   )
 
   addMetric(
-    'spotify_error_recovery_failures_total',
+    'spotifyerror_recovery_failures_total',
     'counter',
     'Total number of failed error recoveries',
     data.errors.recoveryFailures
@@ -336,7 +336,7 @@ function generatePrometheusMetrics(data: any): string {
   // Error by type
   Object.entries(data.errors.errorsByType).forEach(([type, count]: [string, any]) => {
     addMetric(
-      'spotify_errors_by_type_total',
+      'spotifyerrors_by_type_total',
       'counter',
       'Errors by type',
       count,
@@ -347,7 +347,7 @@ function generatePrometheusMetrics(data: any): string {
   // Error by severity
   Object.entries(data.errors.errorsBySeverity).forEach(([severity, count]: [string, any]) => {
     addMetric(
-      'spotify_errors_by_severity_total',
+      'spotifyerrors_by_severity_total',
       'counter',
       'Errors by severity',
       count,

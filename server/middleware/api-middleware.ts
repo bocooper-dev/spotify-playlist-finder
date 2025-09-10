@@ -9,7 +9,7 @@
  * - Performance monitoring
  */
 
-import { createErrorContext, useErrorHandler } from '../.././lib/error-utils'
+import { createErrorContext, useErrorHandler } from '../.././lib/_error-utils'
 
 export default defineEventHandler(async (event) => {
   // Only apply to API routes
@@ -66,7 +66,7 @@ export default defineEventHandler(async (event) => {
         statusMessage: 'Payload Too Large',
         data: {
           success: false,
-          error: {
+          _error: {
             code: 'PAYLOAD_TOO_LARGE',
             message: 'Request payload exceeds maximum size of 10MB'
           }
@@ -83,7 +83,7 @@ export default defineEventHandler(async (event) => {
           statusMessage: 'Bad Request',
           data: {
             success: false,
-            error: {
+            _error: {
               code: 'INVALID_CONTENT_TYPE',
               message: 'Content-Type must be application/json'
             }
@@ -96,7 +96,7 @@ export default defineEventHandler(async (event) => {
     if (process.env.NODE_ENV === 'development') {
       console.log(`[API] ${event.node.req.method} ${event.node.req.url} - ${getClientIP(event)}`)
     }
-  } catch (error: any) {
+  } catch (_error: unknown) {
     const context = createErrorContext('api-middleware', {
       requestId,
       endpoint: event.node.req.url || 'unknown',
@@ -106,10 +106,10 @@ export default defineEventHandler(async (event) => {
     })
 
     const errorHandler = useErrorHandler()
-    await errorHandler.handleError(error, context)
+    await errorHandler.handleError(_error, context)
 
     // Re-throw to let the route handler deal with it
-    throw error
+    throw _error
   }
 
   // Performance monitoring hook

@@ -56,14 +56,14 @@ export default defineEventHandler(async (event) => {
       eventType,
       timestamp: new Date().toISOString()
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error('[N8N Webhook] Processing error:', error)
 
     throw createError({
       statusCode: 500,
       statusMessage: 'Webhook processing failed',
       data: {
-        error: error.message,
+        error: 'N8N Webhook Handler processing failed',
         eventType: body.event
       }
     })
@@ -73,7 +73,7 @@ export default defineEventHandler(async (event) => {
 /**
  * Validate webhook signature to ensure requests come from N8N
  */
-function validateWebhookSignature(payload: any, signature: string, secret: string): boolean {
+function validateWebhookSignature(payload: unknown, signature: string, secret: string): boolean {
   if (!signature || !secret) return false
 
   try {
@@ -120,7 +120,7 @@ async function handleSpotifyTokenRefresh(data: {
     }).catch((error) => {
       console.warn('[Spotify Token] Failed to notify services:', error.message)
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('[Spotify Token] Refresh handling error:', error)
     throw error
   }
@@ -163,7 +163,7 @@ async function handlePlaylistEnhancementCompletion(data: {
     }).catch((error) => {
       console.warn('[Playlist Enhancement] Client notification failed:', error.message)
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('[Playlist Enhancement] Completion handling error:', error)
     throw error
   }
@@ -212,7 +212,7 @@ async function handleApifyMaintenanceAlert(data: {
     }).catch((error) => {
       console.warn('[Apify Maintenance] Alert sending failed:', error.message)
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('[Apify Maintenance] Alert handling error:', error)
     throw error
   }
@@ -240,7 +240,7 @@ async function handleGenreCacheUpdate(data: {
 
     // Invalidate any stale genre-related caches
     await invalidateGenreRelatedCaches()
-  } catch (error: any) {
+  } catch (error) {
     console.error('[Genre Cache] Update handling error:', error)
     throw error
   }
@@ -249,7 +249,7 @@ async function handleGenreCacheUpdate(data: {
 /**
  * Send real-time notification to client via WebSocket or SSE
  */
-async function notifyClient(requestId: string, notification: any) {
+async function notifyClient(requestId: string, notification: unknown) {
   // Implementation would depend on your WebSocket/SSE setup
   // This is a placeholder for real-time client notifications
   console.log(`[Client Notification] ${requestId}:`, notification)

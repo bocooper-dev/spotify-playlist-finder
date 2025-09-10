@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest'
 import { $fetch } from '@nuxt/test-utils/e2e'
-import type { SearchRequest, SearchResult, Playlist } from '~/types'
+import { describe, expect, it } from 'vitest'
+import type { Playlist, SearchRequest, SearchResult } from '~/types'
 
 /**
  * Contract test for POST /api/spotify/search
  * Reference: api-contract.yaml lines 36-59
- * 
+ *
  * ⚠️ CRITICAL: This test MUST FAIL before implementation!
  * The endpoint does not exist yet - this validates the contract.
  */
@@ -42,10 +42,10 @@ describe('POST /api/spotify/search - Contract Test', () => {
 
     // Validate playlists array (should be exactly 50 or fewer)
     expect(response.playlists.length).toBeLessThanOrEqual(50)
-    
+
     if (response.playlists.length > 0) {
       const playlist = response.playlists[0] as Playlist
-      
+
       // Validate Playlist schema compliance
       expect(playlist).toHaveProperty('id')
       expect(playlist).toHaveProperty('name')
@@ -53,7 +53,7 @@ describe('POST /api/spotify/search - Contract Test', () => {
       expect(playlist).toHaveProperty('followerCount')
       expect(playlist).toHaveProperty('owner')
       expect(playlist).toHaveProperty('genres')
-      
+
       // Type validation
       expect(typeof playlist.id).toBe('string')
       expect(typeof playlist.name).toBe('string')
@@ -74,7 +74,7 @@ describe('POST /api/spotify/search - Contract Test', () => {
     // Test validation with invalid request
     const invalidRequest = {
       genres: [], // Empty genres should fail
-      minFollowers: -1, // Negative followers should fail
+      minFollowers: -1 // Negative followers should fail
     }
 
     try {
@@ -85,7 +85,7 @@ describe('POST /api/spotify/search - Contract Test', () => {
       })
       // Should not reach here
       expect(false).toBe(true)
-    } catch (error: any) {
+    } catch (error) {
       // Should return 400 Bad Request per api-contract.yaml line 54-55
       expect(error.response?.status).toBe(400)
       expect(error.response?.data).toHaveProperty('code')
@@ -107,7 +107,7 @@ describe('POST /api/spotify/search - Contract Test', () => {
         body: tooManyGenres
       })
       expect(false).toBe(true) // Should not reach here
-    } catch (error: any) {
+    } catch (error) {
       expect(error.response?.status).toBe(400)
     }
   })
@@ -123,9 +123,9 @@ describe('POST /api/spotify/search - Contract Test', () => {
           body: validSearchRequest
         })
       )
-      
+
       await Promise.all(requests)
-    } catch (error: any) {
+    } catch (error) {
       if (error.response?.status === 429) {
         // Validate rate limit response structure
         expect(error.response.headers).toHaveProperty('retry-after')
@@ -148,9 +148,9 @@ describe('POST /api/spotify/search - Contract Test', () => {
 
     // Should return exactly 50 playlists per spec requirement
     expect(response.playlists.length).toBe(50)
-    
+
     // All playlists should meet minimum follower requirement
-    response.playlists.forEach(playlist => {
+    response.playlists.forEach((playlist) => {
       expect(playlist.followerCount).toBeGreaterThanOrEqual(100)
     })
   })

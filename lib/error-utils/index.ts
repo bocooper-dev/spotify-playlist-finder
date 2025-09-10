@@ -1,9 +1,9 @@
 /**
  * Error Handling Utilities Library
- * 
+ *
  * Provides comprehensive error handling, classification, reporting, and recovery
  * mechanisms for the Spotify Playlist Discovery System.
- * 
+ *
  * Features:
  * - Structured error classification and handling
  * - Error recovery strategies and retry logic
@@ -67,12 +67,12 @@ export class AppError extends Error {
   public readonly context?: ErrorContext
   public readonly timestamp: number
   public recoveryAttempts = 0
-  
+
   constructor(details: Partial<ErrorDetails> & { message: string }) {
     super(details.message)
     this.name = 'AppError'
     this.timestamp = Date.now()
-    
+
     this.details = {
       code: details.code || 'UNKNOWN_ERROR',
       message: details.message,
@@ -86,10 +86,10 @@ export class AppError extends Error {
       stack: details.stack || this.stack,
       metadata: details.metadata || {}
     }
-    
+
     this.context = details.context
   }
-  
+
   /**
    * Convert to JSON for logging/transmission
    */
@@ -103,7 +103,7 @@ export class AppError extends Error {
       recoveryAttempts: this.recoveryAttempts
     }
   }
-  
+
   /**
    * Create user-friendly error response
    */
@@ -132,7 +132,7 @@ export class AppError extends Error {
  * Specific error types
  */
 export class ValidationError extends AppError {
-  constructor(message: string, field?: string, value?: any) {
+  constructor(message: string, field?: string, value?: unknown) {
     super({
       message,
       code: 'VALIDATION_ERROR',
@@ -194,7 +194,7 @@ export class RateLimitError extends AppError {
 }
 
 export class SpotifyApiError extends AppError {
-  constructor(message: string, statusCode?: number, spotifyError?: any) {
+  constructor(message: string, statusCode?: number, spotifyError?: unknown) {
     super({
       message,
       code: 'SPOTIFY_API_ERROR',
@@ -229,7 +229,7 @@ export class BusinessLogicError extends AppError {
 export const RecoveryStrategies: ErrorRecoveryStrategy[] = [
   {
     name: 'token-refresh',
-    canRecover: (error) => error.details.category === 'auth',
+    canRecover: error => error.details.category === 'auth',
     recover: async (error, context) => {
       // Attempt to refresh authentication token
       try {
@@ -245,10 +245,10 @@ export const RecoveryStrategies: ErrorRecoveryStrategy[] = [
     maxAttempts: 2,
     backoffDelay: 1000
   },
-  
+
   {
     name: 'rate-limit-backoff',
-    canRecover: (error) => error.details.category === 'rate_limit',
+    canRecover: error => error.details.category === 'rate_limit',
     recover: async (error, context) => {
       const retryAfter = error.details.metadata?.retryAfter || 1000
       await new Promise(resolve => setTimeout(resolve, retryAfter))
@@ -257,10 +257,10 @@ export const RecoveryStrategies: ErrorRecoveryStrategy[] = [
     maxAttempts: 3,
     backoffDelay: 1000
   },
-  
+
   {
     name: 'network-retry',
-    canRecover: (error) => error.details.category === 'network' && error.details.retryable,
+    canRecover: error => error.details.category === 'network' && error.details.retryable,
     recover: async (error, context) => {
       // Exponential backoff for network errors
       const attempt = error.recoveryAttempts + 1
@@ -271,10 +271,10 @@ export const RecoveryStrategies: ErrorRecoveryStrategy[] = [
     maxAttempts: 3,
     backoffDelay: 1000
   },
-  
+
   {
     name: 'api-fallback',
-    canRecover: (error) => error.details.category === 'api',
+    canRecover: error => error.details.category === 'api',
     recover: async (error, context) => {
       // Attempt to use cached data or alternative endpoints
       try {
@@ -283,12 +283,12 @@ export const RecoveryStrategies: ErrorRecoveryStrategy[] = [
           const cache = useCache()
           const cacheKey = `fallback_${context.operation}_${context.requestId}`
           const cached = await cache.get(cacheKey)
-          
+
           if (cached) {
             return { data: cached, fromCache: true }
           }
         }
-        
+
         throw new Error('No fallback available')
       } catch (fallbackError) {
         throw new AppError({
@@ -322,29 +322,29 @@ export class ErrorHandler {
     averageRecoveryTime: 0,
     circuitBreakerTrips: 0
   }
-  
+
   constructor() {
     this.recoveryStrategies = [...RecoveryStrategies]
   }
-  
+
   /**
    * Handle error with recovery attempts
    */
   async handleError(error: Error | AppError, context: ErrorContext): Promise<{
     recovered: boolean
-    result?: any
+    result?: unknown
     finalError: AppError
   }> {
     const appError = this.normalizeError(error, context)
     this.updateMetrics(appError)
-    
+
     // Log error
     await this.logError(appError, context)
-    
+
     // Attempt recovery if error is retryable
     if (appError.details.retryable && appError.recoveryAttempts < 3) {
       const recoveryResult = await this.attemptRecovery(appError, context)
-      
+
       if (recoveryResult.success) {
         this.metrics.recoverySuccess++
         return {
@@ -356,49 +356,49 @@ export class ErrorHandler {
         this.metrics.recoveryFailures++
       }
     }
-    
+
     return {
       recovered: false,
       finalError: appError
     }
   }
-  
+
   /**
    * Attempt error recovery using available strategies
    */
   private async attemptRecovery(error: AppError, context: ErrorContext): Promise<{
     success: boolean
-    result?: any
+    result?: unknown
     strategy?: string
   }> {
     const startTime = Date.now()
-    
+
     for (const strategy of this.recoveryStrategies) {
       if (strategy.canRecover(error) && error.recoveryAttempts < strategy.maxAttempts) {
         try {
           error.recoveryAttempts++
-          
+
           const result = await strategy.recover(error, context)
-          
+
           // Update recovery time metrics
           const recoveryTime = Date.now() - startTime
           this.updateRecoveryTime(recoveryTime)
-          
+
           return {
             success: true,
             result,
             strategy: strategy.name
           }
-        } catch (recoveryError: any) {
+        } catch (recoveryerror) {
           console.warn(`Recovery strategy '${strategy.name}' failed:`, recoveryError.message)
           continue
         }
       }
     }
-    
+
     return { success: false }
   }
-  
+
   /**
    * Normalize any error to AppError
    */
@@ -409,20 +409,20 @@ export class ErrorHandler {
       }
       return error
     }
-    
+
     // Convert common error types
     if (error.message.includes('fetch failed') || error.message.includes('network')) {
       return new NetworkError(error.message, context.endpoint)
     }
-    
+
     if (error.message.includes('401') || error.message.includes('unauthorized')) {
       return new AuthenticationError(error.message)
     }
-    
+
     if (error.message.includes('429') || error.message.includes('rate limit')) {
       return new RateLimitError(error.message)
     }
-    
+
     // Generic error fallback
     return new AppError({
       message: error.message,
@@ -437,7 +437,7 @@ export class ErrorHandler {
       stack: error.stack
     })
   }
-  
+
   /**
    * Log error to appropriate channels
    */
@@ -448,10 +448,10 @@ export class ErrorHandler {
       timestamp: new Date().toISOString(),
       environment: process.env.NODE_ENV || 'development'
     }
-    
+
     // Console logging (always)
     console.error(`[${error.details.severity.toUpperCase()}] ${error.details.code}:`, logData)
-    
+
     // High/Critical errors get additional logging
     if (error.details.severity === 'high' || error.details.severity === 'critical') {
       try {
@@ -462,17 +462,17 @@ export class ErrorHandler {
       }
     }
   }
-  
+
   /**
    * Send error to external logging service
    */
-  private async sendToExternalLogging(logData: any): Promise<void> {
+  private async sendToExternalLogging(logData: unknown): Promise<void> {
     // Placeholder for external logging integration
     // In production, this would integrate with services like:
     // - Sentry, DataDog, LogRocket, etc.
     // - Custom logging endpoints
     // - Slack/Discord webhooks for critical errors
-    
+
     try {
       if (process.env.ERROR_WEBHOOK_URL) {
         await $fetch(process.env.ERROR_WEBHOOK_URL, {
@@ -487,47 +487,47 @@ export class ErrorHandler {
       console.warn('Failed to send error to webhook:', error)
     }
   }
-  
+
   /**
    * Update error metrics
    */
   private updateMetrics(error: AppError): void {
     this.metrics.totalErrors++
-    
+
     // Update by type
     const errorType = error.details.code
     this.metrics.errorsByType[errorType] = (this.metrics.errorsByType[errorType] || 0) + 1
-    
+
     // Update by severity
     const severity = error.details.severity
     this.metrics.errorsBySeverity[severity] = (this.metrics.errorsBySeverity[severity] || 0) + 1
-    
+
     // Update by endpoint
     if (error.context?.endpoint) {
       const endpoint = error.context.endpoint
       this.metrics.errorsByEndpoint[endpoint] = (this.metrics.errorsByEndpoint[endpoint] || 0) + 1
     }
   }
-  
+
   /**
    * Update recovery time metrics
    */
   private updateRecoveryTime(recoveryTime: number): void {
     const totalRecoveries = this.metrics.recoverySuccess + this.metrics.recoveryFailures
     const currentAverage = this.metrics.averageRecoveryTime
-    
+
     this.metrics.averageRecoveryTime = totalRecoveries > 0
       ? (currentAverage * (totalRecoveries - 1) + recoveryTime) / totalRecoveries
       : recoveryTime
   }
-  
+
   /**
    * Get current error metrics
    */
   getMetrics(): ErrorMetrics {
     return { ...this.metrics }
   }
-  
+
   /**
    * Reset metrics
    */
@@ -543,7 +543,7 @@ export class ErrorHandler {
       circuitBreakerTrips: 0
     }
   }
-  
+
   /**
    * Add custom recovery strategy
    */
@@ -557,18 +557,18 @@ export class ErrorHandler {
  */
 export class ErrorBoundary {
   private handler: ErrorHandler
-  
+
   constructor(handler?: ErrorHandler) {
     this.handler = handler || new ErrorHandler()
     this.setupGlobalHandlers()
   }
-  
+
   /**
    * Setup global error handlers
    */
   private setupGlobalHandlers(): void {
     // Unhandled promise rejections
-    if (process.client) {
+    if (import.meta.client) {
       window.addEventListener('unhandledrejection', (event) => {
         const error = event.reason
         const context: ErrorContext = {
@@ -577,11 +577,11 @@ export class ErrorBoundary {
           userAgent: navigator.userAgent,
           endpoint: window.location.pathname
         }
-        
+
         this.handler.handleError(error, context)
         event.preventDefault()
       })
-      
+
       // Global error handler
       window.addEventListener('error', (event) => {
         const error = event.error || new Error(event.message)
@@ -591,27 +591,27 @@ export class ErrorBoundary {
           userAgent: navigator.userAgent,
           endpoint: window.location.pathname
         }
-        
+
         this.handler.handleError(error, context)
       })
     }
-    
+
     // Node.js process handlers
-    if (process.server) {
+    if (import.meta.server) {
       process.on('uncaughtException', (error) => {
         const context: ErrorContext = {
           operation: 'uncaught-exception',
           timestamp: Date.now()
         }
-        
+
         this.handler.handleError(error, context)
-        
+
         // In production, you might want to exit gracefully
         if (process.env.NODE_ENV === 'production') {
           setTimeout(() => process.exit(1), 1000)
         }
       })
-      
+
       process.on('unhandledRejection', (reason, promise) => {
         const error = reason instanceof Error ? reason : new Error(String(reason))
         const context: ErrorContext = {
@@ -619,7 +619,7 @@ export class ErrorBoundary {
           timestamp: Date.now(),
           metadata: { promise: promise.toString() }
         }
-        
+
         this.handler.handleError(error, context)
       })
     }
@@ -635,7 +635,7 @@ export const ErrorResponse = {
    */
   create(error: AppError, statusCode?: number): object {
     const response = error.toUserResponse()
-    
+
     return {
       success: false,
       ...response,
@@ -643,7 +643,7 @@ export const ErrorResponse = {
       statusCode: statusCode || this.getStatusCode(error)
     }
   },
-  
+
   /**
    * Get appropriate HTTP status code for error
    */
@@ -685,7 +685,7 @@ export function isRetryableError(error: Error | AppError): boolean {
   if (error instanceof AppError) {
     return error.details.retryable
   }
-  
+
   // Check common retryable error patterns
   const retryablePatterns = [
     /network/i,
@@ -696,7 +696,7 @@ export function isRetryableError(error: Error | AppError): boolean {
     /429/,
     /rate.*limit/i
   ]
-  
+
   return retryablePatterns.some(pattern => pattern.test(error.message))
 }
 
@@ -710,7 +710,7 @@ export function useErrorHandler(): ErrorHandler {
   if (!globalErrorHandler) {
     globalErrorHandler = new ErrorHandler()
   }
-  
+
   return globalErrorHandler
 }
 
@@ -718,7 +718,7 @@ export function useErrorBoundary(): ErrorBoundary {
   if (!globalErrorBoundary) {
     globalErrorBoundary = new ErrorBoundary()
   }
-  
+
   return globalErrorBoundary
 }
 
@@ -727,16 +727,16 @@ export function useErrorBoundary(): ErrorBoundary {
  */
 export function useAppError() {
   const errorHandler = useErrorHandler()
-  
+
   const handleError = async (error: Error | AppError, operation: string) => {
     const context = createErrorContext(operation, {
       // Add Nuxt-specific context
       endpoint: useRoute().path,
-      userId: 'anonymous', // Would get from auth state
+      userId: 'anonymous' // Would get from auth state
     })
-    
+
     const result = await errorHandler.handleError(error, context)
-    
+
     if (!result.recovered) {
       // Show user-friendly error message
       const errorResponse = ErrorResponse.create(result.finalError)
@@ -746,18 +746,18 @@ export function useAppError() {
         data: errorResponse
       })
     }
-    
+
     return result.result
   }
-  
+
   const createBusinessError = (message: string, operation: string) => {
     return new BusinessLogicError(message, operation)
   }
-  
-  const createValidationError = (message: string, field?: string, value?: any) => {
+
+  const createValidationError = (message: string, field?: string, value?: unknown) => {
     return new ValidationError(message, field, value)
   }
-  
+
   return {
     handleError,
     createBusinessError,

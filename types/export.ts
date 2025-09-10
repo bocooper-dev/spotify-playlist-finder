@@ -9,8 +9,8 @@ export interface ExportPlaylist {
   tracks: number
   ownerName: string
   ownerProfile: string
-  ownerContact: string          // "Available" | "Limited" | "Not Available"
-  genres: string                // Comma-separated
+  ownerContact: string // "Available" | "Limited" | "Not Available"
+  genres: string // Comma-separated
   lastUpdated: string
 }
 
@@ -20,7 +20,7 @@ export interface ExportPlaylist {
  */
 export interface ExportData {
   metadata: {
-    exportDate: string           // ISO timestamp
+    exportDate: string // ISO timestamp
     searchCriteria: {
       genres: string[]
       minFollowers: number

@@ -93,7 +93,7 @@
             },
             {
               "name": "reason",
-              "value": "authentication_error_recovery"
+              "value": "authenticationerror_recovery"
             }
           ]
         }
@@ -219,7 +219,7 @@
           "parameters": [
             {
               "name": "event",
-              "value": "workflow_error_occurred"
+              "value": "workflowerror_occurred"
             },
             {
               "name": "errorId",

@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   let responseIntercepted = false
 
   // Intercept response to handle errors
-  const handleResponse = (statusCode: number, data?: any) => {
+  const handleResponse = (statusCode: number, data?: unknown) => {
     if (responseIntercepted) return
     responseIntercepted = true
 
@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
 
   // Hook into response
   event.node.res.writeHead = ((originalWriteHead) => {
-    return function (statusCode: number, ...args: any[]) {
+    return function (statusCode: number, ...args: unknown[]) {
       handleResponse(statusCode)
       return originalWriteHead.call(this, statusCode, ...args)
     }
@@ -52,7 +52,7 @@ export default defineEventHandler(async (event) => {
   try {
     // Let the request proceed
     return
-  } catch (error: any) {
+  } catch (error) {
     // This should rarely be hit due to route-specific error handling
     const context = createErrorContext('global-error-handler', {
       requestId: event.context.requestId || 'unknown',
