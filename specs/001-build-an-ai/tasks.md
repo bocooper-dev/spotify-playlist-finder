@@ -1,6 +1,6 @@
 # Tasks: Spotify Playlist Discovery System
 
-**Input**: Design documents from `/specs/002-build-an-ai/`
+**Input**: Design documents from `/specs/001-build-an-ai/`
 **Prerequisites**: plan.md (required), research.md, data-model.md, contracts/
 
 ## 📚 Key Reference Documents
